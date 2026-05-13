@@ -28,7 +28,10 @@ export default function Replay() {
     fetch(`${API_BASE}/api/history/${selectedStorm}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((payload) => setApiStorm(payload))
-      .catch(() => setApiStorm(null));
+      .catch((error) => {
+        console.warn("Replay API load failed, using fallback storm data.", error);
+        setApiStorm(null);
+      });
   }, [selectedStorm]);
 
   // Sync frame to store

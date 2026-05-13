@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -10,6 +11,8 @@ import numpy as np
 import pandas as pd
 
 from app.services.physics import akasofu_epsilon_W, dynamic_pressure_npa
+
+logger = logging.getLogger(__name__)
 
 
 CORE_SEQUENCE_COLS = [
@@ -44,7 +47,8 @@ def _load_scaler(name: str):
         if p.exists():
             try:
                 return joblib.load(p)
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to load scaler %s: %s", p, e)
                 return None
     return None
 

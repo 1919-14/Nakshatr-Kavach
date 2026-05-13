@@ -35,7 +35,11 @@ def load_storm(storm_id: str, offset: int = 0, limit: Optional[int] = None) -> O
     if path is None:
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return None
     frames: List[Dict[str, Any]] = list(payload.get("frames") or [])
+    if not all(isinstance(f, dict) for f in frames):
+        return None
     if offset < 0:
         offset = 0
     if limit is not None and limit >= 0:

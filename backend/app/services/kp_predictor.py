@@ -20,7 +20,11 @@ MODEL_DIRS = [
 ]
 XGB_CANDIDATES = ["xgb_kp_model.pkl", "xgb_kp_multi.joblib"]
 LSTM_CANDIDATES = ["lstm_kp_model.h5", "lstm_kp.keras"]
-MC_DROPOUT_PASSES = int(os.environ.get("MC_DROPOUT_PASSES", "32"))
+
+try:
+    MC_DROPOUT_PASSES = int(os.environ.get("MC_DROPOUT_PASSES", "32"))
+except (TypeError, ValueError):
+    MC_DROPOUT_PASSES = 32
 
 ROW7_NAMES = ["kp0", "bz", "v", "bt", "n", "south", "p_dyn"]
 

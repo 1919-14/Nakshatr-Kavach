@@ -365,7 +365,10 @@ class DataIngestionService:
             df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
             df = df.dropna(subset=["timestamp"])
             df = self.interpolate_gaps(df)
-            df["data_quality_flag"] = df.get("quality_flag", "UNKNOWN")
+            if "quality_flag" in df.columns:
+                df["data_quality_flag"] = df["quality_flag"]
+            else:
+                df["data_quality_flag"] = "UNKNOWN"
             return df
         finally:
             session.close()
