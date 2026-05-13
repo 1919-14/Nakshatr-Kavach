@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -14,6 +13,7 @@ from app.services.data_ingestion import get_ingestion_service
 from app.services.llm_advisory import generate_advisory
 from app.services.pipeline import build_advisory_context, build_dashboard_payload
 from app.services.physics import snapshot_to_api_row
+from app.services.replay_engine import load_storm
 
 api_bp = Blueprint("api", __name__)
 
@@ -163,7 +163,7 @@ def _save_advisory(payload: dict):
     try:
         rec = AdvisoryRecord(
             generated_at=datetime.utcnow(),
-            advisory_source=str(payload.get("source", "UNKNOWN")),
+            advisory_source=str(payload.get("advisory_source") or payload.get("source", "UNKNOWN")),
             payload_json=json.dumps(payload, default=str),
         )
         s.add(rec)
@@ -216,16 +216,11 @@ def dashboard():
     return jsonify(build_dashboard_payload())
 
 
-# ── L7 Historical replay (static JSON frames) ─────────────────────────────────
-
-
-_DATA_HIST = Path(__file__).resolve().parent / "data" / "historical"
-
-
 @api_bp.route("/history/<storm_id>", methods=["GET"])
 def history_storm(storm_id: str):
-    safe = "".join(c for c in storm_id if c.isalnum() or c in "_-")
-    path = _DATA_HIST / f"{safe}.json"
-    if not path.is_file():
+    offset = request.args.get("offset", 0, type=int)
+    limit = request.args.get("limit", None, type=int)
+    payload = load_storm(storm_id, offset=offset, limit=limit)
+    if payload is None:
         return jsonify({"error": "unknown_storm", "id": storm_id}), 404
-    return jsonify(json.loads(path.read_text(encoding="utf-8")))
+    return jsonify(payload)

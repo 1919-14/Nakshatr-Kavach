@@ -49,7 +49,7 @@ export function buildKpChartData(api) {
 
 export function normalizeAdvisory(api) {
   if (!api) return null;
-  const src = api.source;
+  const src = api.advisory_source || api.source;
   const source =
     src === "LLM_GROQ" ? "AI_GENERATED" : src === "RULE_BASED" ? "RULE_BASED" : src || "RULE_BASED";
   return { ...api, source };

@@ -168,7 +168,10 @@ export function useSocket() {
   useEffect(() => {
     if (USE_MOCK) return;
     import("socket.io-client").then(({ io }) => {
-      const s = io(API_BASE, { transports: ["websocket", "polling"] });
+      const s = io(API_BASE, {
+        path: "/realtime",
+        transports: ["websocket", "polling"],
+      });
       socketRef.current = s;
       s.on("solar_wind_update", setSolarWind);
       s.on("satellite_update", setSatellites);

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from app.db import SolarWindData, get_session_factory, init_db
+from app.db import SolarWindData, get_engine, get_session_factory, init_db
 from app.services.physics import hemi_plasma_proxy, storm_class_from_kp, xray_class_from_flux, warning_minutes_from_speed
 
 logger = logging.getLogger(__name__)
@@ -203,7 +203,7 @@ class DataIngestionService:
         mag = self._fetch_dscovr_mag()
         kp = self._fetch_kp()
         xr = self._fetch_xray()
-        cme_events = self._donki_cme_summary()
+        cme_event = _donki_cme_summary()
         flare_events = self._fetch_solar_flares()
         alerts = self._fetch_alerts()
 
@@ -220,7 +220,7 @@ class DataIngestionService:
 
         v, n, t = hemi_plasma_proxy(kp_val, bz, bt)
 
-        cme = cme_events[-1] if cme_events else {}
+        cme = cme_event or {}
         flare = flare_events[-1] if flare_events else {}
 
         merged: Dict[str, Any] = {
@@ -234,9 +234,9 @@ class DataIngestionService:
             "xray_flux_Wm2": xr.get("xray_flux_Wm2"),
             "kp_current": kp_val,
             "xray_class": xray_class_from_flux(xr.get("xray_flux_Wm2")),
-            "cme_id": cme.get("activityID"),
-            "cme_speed_kmps": cme.get("speed"),
-            "cme_earth_directed": cme.get("isEarthGB", False),
+            "cme_id": cme.get("cme_id"),
+            "cme_speed_kmps": cme.get("cme_speed_kmps"),
+            "cme_earth_directed": cme.get("cme_earth_directed", False),
             "flare_id": flare.get("flrID"),
             "flare_class": flare.get("classType"),
             "flare_earth_directed": bool("earth" in str(flare.get("note", "")).lower()),
@@ -338,7 +338,7 @@ class DataIngestionService:
                 .order_by(SolarWindData.timestamp.asc())
                 .all()
             )
-            return pd.DataFrame(
+            df = pd.DataFrame(
                 [
                     {
                         "timestamp": r.timestamp,
@@ -357,6 +357,13 @@ class DataIngestionService:
                     for r in q
                 ]
             )
+            if df.empty:
+                return df
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+            df = df.dropna(subset=["timestamp"])
+            df = self.interpolate_gaps(df)
+            df["data_quality_flag"] = df.get("quality_flag", "UNKNOWN")
+            return df
         finally:
             session.close()
 

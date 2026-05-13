@@ -29,6 +29,7 @@ def _rule_based(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "source": "RULE_BASED",
+        "advisory_source": "RULE_BASED",
         "storm_class": sc,
         "kp": kp,
         "sections": [
@@ -77,6 +78,7 @@ def generate_advisory(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "source": "LLM_GROQ",
+            "advisory_source": "LLM",
             "storm_class": ctx.get("storm_class", "QUIET"),
             "kp": ctx.get("kp_now"),
             "sections": [s for s in sections if s.get("content")],
