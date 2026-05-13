@@ -11,6 +11,7 @@ _ALIASES = {
     "may2024": "may2024",
     "2024-may-g5": "may2024",
 }
+_KNOWN_STORMS = {p.stem.lower(): p for p in _BASE.glob("*.json")}
 
 
 def _safe_id(storm_id: str) -> str:
@@ -23,8 +24,8 @@ def _resolve_path(storm_id: str) -> Optional[Path]:
     for name in candidates:
         if not name:
             continue
-        p = _BASE / f"{name}.json"
-        if p.is_file():
+        p = _KNOWN_STORMS.get(name.lower())
+        if p is not None:
             return p
     return None
 
@@ -48,4 +49,3 @@ def load_storm(storm_id: str, offset: int = 0, limit: Optional[int] = None) -> O
     payload["limit"] = limit
     payload["storm_id"] = payload.get("id") or _safe_id(storm_id)
     return payload
-

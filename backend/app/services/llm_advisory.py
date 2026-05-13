@@ -78,7 +78,7 @@ def generate_advisory(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "source": "LLM_GROQ",
-            "advisory_source": "LLM",
+            "advisory_source": "LLM_GROQ",
             "storm_class": ctx.get("storm_class", "QUIET"),
             "kp": ctx.get("kp_now"),
             "sections": [s for s in sections if s.get("content")],

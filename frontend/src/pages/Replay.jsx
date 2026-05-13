@@ -15,10 +15,9 @@ export default function Replay() {
   const [apiStorm,      setApiStorm]      = useState(null);
   const timerRef = useRef(null);
   const { setSolarWind, setSatellites } = useStormStore();
+  const mockStorm = selectedStorm ? HISTORICAL_STORMS.find((s) => s.id === selectedStorm) : null;
 
-  const storm  = selectedStorm
-    ? (USE_MOCK ? HISTORICAL_STORMS.find(s=>s.id===selectedStorm) : (apiStorm || HISTORICAL_STORMS.find(s=>s.id===selectedStorm)))
-    : null;
+  const storm  = selectedStorm ? (USE_MOCK ? mockStorm : (apiStorm || mockStorm)) : null;
   const frames = storm?.frames || [];
   const frame  = frames[frameIndex] || null;
   const kp     = frame?.kp ?? 0;

@@ -154,7 +154,7 @@ class KpPredictor:
         seq = build_sequence_tensor(df, 24)
         try:
             preds: List[np.ndarray] = []
-            for _ in range(max(8, int(passes))):
+            for _ in range(max(1, int(passes))):
                 p = self._lstm(seq, training=True)
                 preds.append(np.asarray(p, dtype=np.float32).reshape(1, -1))
             stack = np.vstack(preds)

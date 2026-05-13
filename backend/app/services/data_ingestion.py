@@ -156,6 +156,9 @@ class DataIngestionService:
             logger.warning("Solar flare fetch failed: %s", e)
             return self._flare_cache[-3:] if self._flare_cache else []
 
+    def _donki_cme_summary(self) -> Dict[str, Any]:
+        return _donki_cme_summary()
+
     def validate_reading(self, data: Dict[str, Any]) -> Dict[str, str]:
         """Validate each field against physical ranges, returning dict of field->issue."""
         issues: Dict[str, str] = {}
@@ -203,7 +206,7 @@ class DataIngestionService:
         mag = self._fetch_dscovr_mag()
         kp = self._fetch_kp()
         xr = self._fetch_xray()
-        cme_event = _donki_cme_summary()
+        cme_event = self._donki_cme_summary()
         flare_events = self._fetch_solar_flares()
         alerts = self._fetch_alerts()
 
