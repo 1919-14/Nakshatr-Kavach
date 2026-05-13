@@ -1,0 +1,12 @@
+[
+  {"id": "insat-3dr", "name": "INSAT-3DR", "shortName": "INSAT", "type": "GEO", "altitude_km": 35786, "inclination_deg": 0, "mission": "Weather forecasting, cyclone tracking", "criticality": 1.45, "orbit_color": "#FFD700"},
+  {"id": "navic-1", "name": "NavIC IRNSS-1I", "shortName": "NavIC", "type": "GEO", "altitude_km": 36000, "inclination_deg": 29, "mission": "Regional navigation", "criticality": 1.5, "orbit_color": "#FFD700"},
+  {"id": "cartosat-3", "name": "Cartosat-3", "shortName": "CARTO", "type": "LEO", "altitude_km": 509, "inclination_deg": 97.5, "mission": "High-resolution Earth imaging", "criticality": 1.15, "orbit_color": "#00D4FF"},
+  {"id": "risat-2b", "name": "RISAT-2B", "shortName": "RISAT", "type": "LEO", "altitude_km": 556, "inclination_deg": 37, "mission": "Radar imaging", "criticality": 1.2, "orbit_color": "#00D4FF"},
+  {"id": "eos-01", "name": "EOS-01", "shortName": "EOS-01", "type": "LEO", "altitude_km": 576, "inclination_deg": 37.8, "mission": "Earth observation", "criticality": 1.05, "orbit_color": "#00D4FF"},
+  {"id": "gsat-30", "name": "GSAT-30", "shortName": "GSAT", "type": "GEO", "altitude_km": 35786, "inclination_deg": 0, "mission": "Telecommunications", "criticality": 1.1, "orbit_color": "#FFD700"},
+  {"id": "eos-06", "name": "EOS-06", "shortName": "EOS-06", "type": "LEO", "altitude_km": 742, "inclination_deg": 98.3, "mission": "Ocean monitoring", "criticality": 1.05, "orbit_color": "#00D4FF"},
+  {"id": "aditya-l1", "name": "Aditya-L1", "shortName": "ADITYA", "type": "L1", "altitude_km": 1500000, "inclination_deg": 0, "mission": "Solar observatory at L1", "criticality": 1.2, "orbit_color": "#FF6B35"},
+  {"id": "resourcesat-2", "name": "Resourcesat-2", "shortName": "RES2", "type": "LEO", "altitude_km": 520, "inclination_deg": 97.4, "mission": "Resource monitoring", "criticality": 1.05, "orbit_color": "#00D4FF"},
+  {"id": "scatsat-1", "name": "SCATSAT-1", "shortName": "SCAT", "type": "LEO", "altitude_km": 720, "inclination_deg": 98.2, "mission": "Ocean wind scatterometry", "criticality": 1.0, "orbit_color": "#00D4FF"}
+]

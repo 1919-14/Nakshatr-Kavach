@@ -1,0 +1,81 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ML Models (runtime)
+backend/app/ml_models/*.joblib
+backend/app/ml_models/*.keras
+
+# ML Models
+*.pkl
+*.h5
+*.hdf5
+*.ckpt
+*.pb
+*.onnx
+
+# Node
+node_modules/
+.pnp
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build
+*.tsbuildinfo
+.next/
+out/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ML data (large files)
+ml_training/data/
+*.csv
+*.csv.gz
+
+# React
+frontend/.env
+frontend/build/
+
+# Textures (large binaries)
+*.jpg
+*.png
+!frontend/public/textures/.gitkeep

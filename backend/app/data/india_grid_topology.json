@@ -1,0 +1,8 @@
+[
+  {"id": "rj-gj", "name": "Rajasthan–Gujarat 400kV", "states": "RJ → GJ", "voltage": "400kV", "length_km": 520, "angle_from_ns_deg": 38, "line_resistance_ohm": 3.8, "base_impact_crore": 240, "population_millions": 4.2, "coords": [[26.9, 73.9], [25.1, 73.2], [23.0, 72.6]]},
+  {"id": "mp-cg", "name": "Vindhyachal–Raipur 765kV", "states": "MP → CG", "voltage": "765kV", "length_km": 480, "angle_from_ns_deg": 42, "line_resistance_ohm": 3.2, "base_impact_crore": 180, "population_millions": 3.1, "coords": [[23.5, 82.2], [22.4, 81.9], [21.2, 81.6]]},
+  {"id": "up-ag", "name": "Agra–Lucknow 765kV", "states": "UP", "voltage": "765kV", "length_km": 410, "angle_from_ns_deg": 28, "line_resistance_ohm": 3.5, "base_impact_crore": 150, "population_millions": 5.8, "coords": [[27.2, 78.0], [26.9, 79.4], [26.8, 80.9]]},
+  {"id": "gj-mundra", "name": "Mundra–Dehgam 400kV", "states": "GJ", "voltage": "400kV", "length_km": 360, "angle_from_ns_deg": 32, "line_resistance_ohm": 4.2, "base_impact_crore": 120, "population_millions": 2.9, "coords": [[22.8, 70.0], [23.0, 71.3], [23.2, 72.6]]},
+  {"id": "cg-sipat", "name": "Sipat–Dharamjaygarh 765kV", "states": "CG", "voltage": "765kV", "length_km": 390, "angle_from_ns_deg": 35, "line_resistance_ohm": 3.6, "base_impact_crore": 90, "population_millions": 1.8, "coords": [[22.1, 82.4], [22.0, 82.7], [22.0, 83.1]]},
+  {"id": "mp-bina", "name": "Bina–Gwalior 765kV", "states": "MP", "voltage": "765kV", "length_km": 340, "angle_from_ns_deg": 25, "line_resistance_ohm": 4.0, "base_impact_crore": 70, "population_millions": 2.1, "coords": [[24.2, 78.1], [25.2, 78.1], [26.2, 78.2]]}
+]

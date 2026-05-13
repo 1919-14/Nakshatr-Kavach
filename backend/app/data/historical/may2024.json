@@ -1,0 +1,15 @@
+{
+  "id": "may2024",
+  "name": "May 2024 G5 storm",
+  "date": "May 10–12, 2024",
+  "peak_kp": 9.0,
+  "peak_class": "G5",
+  "frames": [
+    { "time_offset_hours": -6, "kp": 3.0, "bz": -4, "sw_speed": 420, "storm_class": "QUIET" },
+    { "time_offset_hours": -3, "kp": 5.2, "bz": -8, "sw_speed": 520, "storm_class": "G1" },
+    { "time_offset_hours": 0, "kp": 7.5, "bz": -16, "sw_speed": 680, "storm_class": "G3" },
+    { "time_offset_hours": 3, "kp": 9.0, "bz": -22, "sw_speed": 780, "storm_class": "G5" },
+    { "time_offset_hours": 6, "kp": 8.2, "bz": -18, "sw_speed": 720, "storm_class": "G4" },
+    { "time_offset_hours": 9, "kp": 6.0, "bz": -10, "sw_speed": 580, "storm_class": "G2" }
+  ]
+}

@@ -1,0 +1,36 @@
+# Flask & Extensions
+Flask==3.0.2
+Flask-CORS==4.0.0
+Flask-SocketIO==5.3.6
+
+# Scheduling
+APScheduler==3.10.4
+
+# HTTP
+requests==2.31.0
+
+# Database
+SQLAlchemy==2.0.28
+pymysql==1.1.0
+cryptography>=42.0.0
+
+# Data / ML
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+xgboost==2.0.3
+joblib==1.4.0
+shap==0.44.1
+
+# Optional LSTM inference (install if lstm_kp.keras present)
+# tensorflow-cpu==2.15.0
+
+# LLM
+groq==0.5.0
+
+# Environment
+python-dotenv==1.0.1
+
+# Utilities
+python-dateutil==2.9.0
+pytz==2024.1

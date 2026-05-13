@@ -1,0 +1,373 @@
+// NAKSHATRA-KAVACH — Complete Mock Data Layer
+// Switch to real API: set VITE_USE_MOCK_DATA=false in .env
+
+export const MOCK_SOLAR_WIND = {
+  timestamp: "2024-05-10T14:32:00Z",
+  bz_gsm: -18.4,
+  bt_total: 28.7,
+  sw_speed: 720,
+  proton_density: 12.3,
+  proton_temp: 85000,
+  xray_flux: 0.00015,
+  xray_class: "M1.5",
+  kp_current: 7.2,
+  storm_class: "G3",
+  data_quality: "GOOD",
+};
+
+export const MOCK_KP_FORECAST = {
+  kp_3hr:  { value: 7.8, uncertainty: 0.6 },
+  kp_6hr:  { value: 8.2, uncertainty: 0.9 },
+  kp_12hr: { value: 7.1, uncertainty: 1.2 },
+  kp_24hr: { value: 5.3, uncertainty: 1.8 },
+  storm_probability: 0.87,
+  peak_storm_class: "G4",
+  peak_arrival_minutes: 42,
+};
+
+// Last 12h historical Kp for chart
+export const MOCK_KP_HISTORY = [
+  { time: "-12h", kp: 2.1 }, { time: "-11h", kp: 2.4 },
+  { time: "-10h", kp: 3.0 }, { time: "-9h",  kp: 3.8 },
+  { time: "-8h",  kp: 4.2 }, { time: "-7h",  kp: 4.9 },
+  { time: "-6h",  kp: 5.3 }, { time: "-5h",  kp: 6.1 },
+  { time: "-4h",  kp: 6.8 }, { time: "-3h",  kp: 7.0 },
+  { time: "-2h",  kp: 7.1 }, { time: "-1h",  kp: 7.2 },
+  { time: "Now",  kp: 7.2 },
+];
+
+// Kp forecast timeline for chart (combined history + forecast)
+export const MOCK_KP_CHART_DATA = [
+  { time: "-12h", actual: 2.1,  forecast: null, upper: null, lower: null },
+  { time: "-9h",  actual: 3.8,  forecast: null, upper: null, lower: null },
+  { time: "-6h",  actual: 5.3,  forecast: null, upper: null, lower: null },
+  { time: "-3h",  actual: 7.0,  forecast: null, upper: null, lower: null },
+  { time: "Now",  actual: 7.2,  forecast: 7.2,  upper: 7.8,  lower: 6.6 },
+  { time: "+3h",  actual: null, forecast: 7.8,  upper: 8.4,  lower: 7.2 },
+  { time: "+6h",  actual: null, forecast: 8.2,  upper: 9.0,  lower: 7.3 },
+  { time: "+9h",  actual: null, forecast: 7.9,  upper: 8.8,  lower: 7.0 },
+  { time: "+12h", actual: null, forecast: 7.1,  upper: 8.3,  lower: 5.9 },
+  { time: "+15h", actual: null, forecast: 6.4,  upper: 7.8,  lower: 5.0 },
+  { time: "+18h", actual: null, forecast: 5.8,  upper: 7.3,  lower: 4.3 },
+  { time: "+21h", actual: null, forecast: 5.1,  upper: 6.9,  lower: 3.3 },
+  { time: "+24h", actual: null, forecast: 5.3,  upper: 7.1,  lower: 3.5 },
+];
+
+export const MOCK_SATELLITES = [
+  {
+    id: "insat-3dr",
+    name: "INSAT-3DR",
+    shortName: "INSAT",
+    type: "GEO",
+    altitude: 35786,
+    inclination: 0,
+    mission: "Weather forecasting, cyclone tracking, disaster early warning",
+    drag_risk: 0,
+    charging_risk: 78,
+    radiation_risk: 45,
+    composite_risk: 74,
+    risk_level: "HIGH",
+    action: "Initiate safe mode in 35 minutes. Disable non-essential transponders.",
+    safe_mode_minutes: 35,
+    orbit_color: "#FFD700",
+  },
+  {
+    id: "navic-1",
+    name: "NavIC IRNSS-1I",
+    shortName: "NavIC",
+    type: "GEO",
+    altitude: 36000,
+    inclination: 29,
+    mission: "India's regional navigation system — positioning, timing",
+    drag_risk: 0,
+    charging_risk: 61,
+    radiation_risk: 38,
+    composite_risk: 61,
+    risk_level: "HIGH",
+    action: "Monitor clock frequency drift. Alert navigation service users of potential 3–8m errors.",
+    safe_mode_minutes: null,
+    orbit_color: "#FFD700",
+  },
+  {
+    id: "cartosat-3",
+    name: "Cartosat-3",
+    shortName: "CARTO",
+    type: "LEO",
+    altitude: 509,
+    inclination: 97.5,
+    mission: "High-resolution Earth imaging, urban mapping, defence surveillance",
+    drag_risk: 67,
+    charging_risk: 0,
+    radiation_risk: 55,
+    composite_risk: 64,
+    risk_level: "HIGH",
+    action: "Increase attitude control polling to 2Hz. Schedule corrective burn within 72h.",
+    safe_mode_minutes: null,
+    orbit_color: "#00D4FF",
+  },
+  {
+    id: "risat-2b",
+    name: "RISAT-2B",
+    shortName: "RISAT",
+    type: "LEO",
+    altitude: 556,
+    inclination: 37,
+    mission: "All-weather radar imaging, border surveillance, flood mapping",
+    drag_risk: 59,
+    charging_risk: 0,
+    radiation_risk: 48,
+    composite_risk: 55,
+    risk_level: "MODERATE",
+    action: "Monitor orientation sensors. Prepare for emergency reboot sequence.",
+    safe_mode_minutes: null,
+    orbit_color: "#00D4FF",
+  },
+  {
+    id: "eos-01",
+    name: "EOS-01",
+    shortName: "EOS-01",
+    type: "LEO",
+    altitude: 576,
+    inclination: 37.8,
+    mission: "Agricultural monitoring, forestry, disaster management",
+    drag_risk: 51,
+    charging_risk: 0,
+    radiation_risk: 42,
+    composite_risk: 48,
+    risk_level: "MODERATE",
+    action: "Standard storm protocol active. Elevated sensor monitoring.",
+    safe_mode_minutes: null,
+    orbit_color: "#00D4FF",
+  },
+  {
+    id: "gsat-30",
+    name: "GSAT-30",
+    shortName: "GSAT",
+    type: "GEO",
+    altitude: 35786,
+    inclination: 0,
+    mission: "DTH television, VSAT internet, telecommunications relay",
+    drag_risk: 0,
+    charging_risk: 55,
+    radiation_risk: 31,
+    composite_risk: 44,
+    risk_level: "MODERATE",
+    action: "Monitor transponder performance metrics. No immediate action.",
+    safe_mode_minutes: null,
+    orbit_color: "#FFD700",
+  },
+  {
+    id: "eos-06",
+    name: "EOS-06",
+    shortName: "EOS-06",
+    type: "LEO",
+    altitude: 742,
+    inclination: 98.3,
+    mission: "Ocean colour monitoring, sea surface temperature",
+    drag_risk: 28,
+    charging_risk: 0,
+    radiation_risk: 35,
+    composite_risk: 31,
+    risk_level: "LOW",
+    action: "Routine monitoring. No action required.",
+    safe_mode_minutes: null,
+    orbit_color: "#00D4FF",
+  },
+  {
+    id: "aditya-l1",
+    name: "Aditya-L1",
+    shortName: "ADITYA",
+    type: "L1",
+    altitude: 1500000,
+    inclination: 0,
+    mission: "Solar corona observation, CME detection, space weather forecasting",
+    drag_risk: 0,
+    charging_risk: 0,
+    radiation_risk: 65,
+    composite_risk: 65,
+    risk_level: "HIGH",
+    action: "Direct solar radiation exposure — all instruments in storm observation mode. This is expected.",
+    safe_mode_minutes: null,
+    orbit_color: "#FF6B35",
+  },
+];
+
+export const MOCK_GRID_CORRIDORS = [
+  {
+    id: "rj-gj",
+    name: "Rajasthan–Gujarat 400kV",
+    states: "RJ → GJ",
+    voltage: "400kV",
+    coords: [[26.9, 73.9], [25.1, 73.2], [23.0, 72.6]],
+    gic_amps: 68,
+    risk_percent: 74,
+    impact_crore: 240,
+    population_millions: 4.2,
+    action: "Reduce transformer loading by 15%. Alert substation operators.",
+  },
+  {
+    id: "mp-cg",
+    name: "Vindhyachal–Raipur 765kV",
+    states: "MP → CG",
+    voltage: "765kV",
+    coords: [[23.5, 82.2], [22.4, 81.9], [21.2, 81.6]],
+    gic_amps: 54,
+    risk_percent: 61,
+    impact_crore: 180,
+    population_millions: 3.1,
+    action: "Monitor transformer temperature continuously. Standby repair crew.",
+  },
+  {
+    id: "up-ag",
+    name: "Agra–Lucknow 765kV",
+    states: "UP",
+    voltage: "765kV",
+    coords: [[27.2, 78.0], [26.9, 79.4], [26.8, 80.9]],
+    gic_amps: 47,
+    risk_percent: 53,
+    impact_crore: 150,
+    population_millions: 5.8,
+    action: "Prepare load shedding schedule for peak storm window.",
+  },
+  {
+    id: "gj-mundra",
+    name: "Mundra–Dehgam 400kV",
+    states: "GJ",
+    voltage: "400kV",
+    coords: [[22.8, 70.0], [23.0, 71.3], [23.2, 72.6]],
+    gic_amps: 39,
+    risk_percent: 44,
+    impact_crore: 120,
+    population_millions: 2.9,
+    action: "Standard monitoring. Alert maintenance team.",
+  },
+  {
+    id: "cg-sipat",
+    name: "Sipat–Dharamjaygarh 765kV",
+    states: "CG",
+    voltage: "765kV",
+    coords: [[22.1, 82.4], [22.0, 82.7], [22.0, 83.1]],
+    gic_amps: 31,
+    risk_percent: 35,
+    impact_crore: 90,
+    population_millions: 1.8,
+    action: "Routine monitoring. No immediate action.",
+  },
+  {
+    id: "mp-bina",
+    name: "Bina–Gwalior 765kV",
+    states: "MP",
+    voltage: "765kV",
+    coords: [[24.2, 78.1], [25.2, 78.1], [26.2, 78.2]],
+    gic_amps: 24,
+    risk_percent: 27,
+    impact_crore: 70,
+    population_millions: 2.1,
+    action: "Low risk. Scheduled monitoring sufficient.",
+  },
+];
+
+export const MOCK_ADVISORY = {
+  generated_at: "2024-05-10T14:35:00Z",
+  source: "AI_GENERATED",
+  storm_class: "G3",
+  kp: 7.2,
+  sections: [
+    {
+      title: "THREAT ASSESSMENT",
+      content: "A strong G3 geomagnetic storm (Kp 7.2) is currently in progress following the arrival of a CME launched at ▸ T-18:42 UTC. Solar wind speed is elevated at 720 km/s with a southward Bz of -18.4 nT, indicating sustained energy coupling into Earth's magnetosphere. Storm intensity is forecast to peak at Kp 8.2 (G4) within ▸ T+42 minutes. Recovery to below Kp 5 is expected by ▸ T+18 hours.",
+    },
+    {
+      title: "SATELLITE OPERATIONS",
+      content: "▸ INSAT-3DR: Initiate safe mode protocol within 35 minutes. Elevated surface charging at GEO orbit presents 74% risk of electrostatic discharge events. Disable non-essential transponders during peak window 15:10–19:30 IST.\n▸ Cartosat-3: Atmospheric drag increased 2.3× at 509 km. Orbital decay of approximately 180m projected over 48 hours. Schedule corrective burn by ▸ T+72 hours.\n▸ NavIC: Navigation accuracy degraded. Signal errors of 3–8 metres projected. Issue user advisory for aviation, maritime, and precision agriculture applications.",
+    },
+    {
+      title: "INDIA GRID ASSESSMENT",
+      content: "Geomagnetically Induced Currents (GICs) are projected to reach 68 Amps on the Rajasthan–Gujarat 400kV corridor — exceeding the critical threshold of 50A. ▸ POSOCO should reduce transformer loading by 15–20% in Northern and Western regions during 14:30–18:00 IST. The 1989 Quebec blackout occurred at Kp 9 — current storm trajectory warrants precautionary action now.",
+    },
+    {
+      title: "RECOMMENDED ACTIONS",
+      content: "▸ IMMEDIATE (next 30 min): Begin INSAT-3DR safe mode procedure.\n▸ SHORT-TERM (next 2 hrs): Notify POSOCO grid operators. Issue NavIC degradation advisory.\n▸ MEDIUM-TERM (next 12 hrs): Monitor Cartosat-3 orbital parameters. Schedule recovery operations.\n▸ RECOVERY: Full satellite operations may resume at ▸ T+20 hours post-peak.",
+    },
+  ],
+  hindi_summary: "वर्तमान में G3 श्रेणी का भू-चुंबकीय तूफान सक्रिय है (Kp 7.2)। INSAT-3DR को 35 मिनट के भीतर सुरक्षित मोड में डालें। राजस्थान-गुजरात 400kV ट्रांसमिशन कॉरिडोर पर GIC का खतरा अधिक है — लोड 15% कम करें। NavIC सटीकता अस्थायी रूप से प्रभावित है।",
+};
+
+// ── HISTORICAL STORMS FOR REPLAY ──────────────────────────────────────────────
+export const HISTORICAL_STORMS = [
+  {
+    id: "may2024",
+    name: "May 2024 — Carrington-Class",
+    date: "May 10–12, 2024",
+    peak_kp: 9.0,
+    peak_class: "G5",
+    headline: "Strongest storm in 20 years. Aurora visible from India.",
+    color: "#9C27B0",
+    frames: generateStormFrames([3,4.7,6.3,7.8,8.9,9.0,8.3,7.1,5.8,4.2,3.1,2.0]),
+  },
+  {
+    id: "halloween2003",
+    name: "Halloween Storms 2003",
+    date: "Oct 28–Nov 4, 2003",
+    peak_kp: 9.0,
+    peak_class: "G5",
+    headline: "Caused satellite anomalies and power outages in Sweden.",
+    color: "#FF6B35",
+    frames: generateStormFrames([2,3.5,5.8,7.2,8.5,9.0,8.8,7.5,6.0,4.5,3.0,2.0]),
+  },
+  {
+    id: "quebec1989",
+    name: "Quebec Blackout 1989",
+    date: "March 13, 1989",
+    peak_kp: 9.0,
+    peak_class: "G5",
+    headline: "9-hour Quebec blackout. 6 million people without power.",
+    color: "#F44336",
+    frames: generateStormFrames([1,2,4,6.5,8,9,9,8.5,7,5.5,4,2.5]),
+  },
+  {
+    id: "starlink2022",
+    name: "Starlink Storm 2022",
+    date: "February 3, 2022",
+    peak_kp: 4.9,
+    peak_class: "G1",
+    headline: "38 Starlink satellites deorbited due to elevated drag.",
+    color: "#4CAF50",
+    frames: generateStormFrames([1,1.5,2.5,3.5,4.2,4.9,4.5,3.8,3.0,2.2,1.8,1.2]),
+  },
+];
+
+function generateStormFrames(kpValues) {
+  return kpValues.map((kp, i) => ({
+    time_offset_hours: (i - 2) * 3,
+    kp,
+    bz: -(kp * 2.4 + Math.random() * 3),
+    sw_speed: 300 + kp * 52 + Math.random() * 40,
+    storm_class: kp >= 9 ? "G5" : kp >= 8 ? "G4" : kp >= 7 ? "G3" : kp >= 6 ? "G2" : kp >= 5 ? "G1" : "QUIET",
+    satellites: MOCK_SATELLITES.map(s => ({
+      ...s,
+      composite_risk: Math.min(100, Math.round(s.composite_risk * (kp / 7.2))),
+      risk_level: (s.composite_risk * kp / 7.2) > 70 ? "HIGH" :
+                  (s.composite_risk * kp / 7.2) > 40 ? "MODERATE" : "LOW",
+    })),
+  }));
+}
+
+// ── SPARKLINE HISTORY (last 60 readings for each metric) ────────────────────
+export function generateSparkline(baseVal, variance, length = 60) {
+  const arr = [];
+  let v = baseVal;
+  for (let i = 0; i < length; i++) {
+    v += (Math.random() - 0.5) * variance;
+    arr.push(parseFloat(v.toFixed(2)));
+  }
+  return arr;
+}
+
+export const MOCK_SPARKLINES = {
+  bz:      generateSparkline(-18.4, 3),
+  bt:      generateSparkline(28.7, 2),
+  speed:   generateSparkline(720, 30),
+  density: generateSparkline(12.3, 1.5),
+  kp:      generateSparkline(7.2, 0.4),
+};
