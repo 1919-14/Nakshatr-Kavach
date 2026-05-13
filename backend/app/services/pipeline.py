@@ -42,14 +42,19 @@ def build_dashboard_payload() -> Dict[str, Any]:
 
 def build_advisory_context() -> Dict[str, Any]:
     p = build_dashboard_payload()
+    high_sats = [s for s in (p.get("satellites") or []) if float(s.get("composite_risk") or 0) >= 60]
+    high_grid = [g for g in (p.get("grid") or []) if float(g.get("risk_percent") or 0) >= 70]
     return {
         "kp_now": p["kp_forecast"].get("current_kp"),
         "storm_class": p["kp_forecast"].get("storm_class"),
         "forecast": p["kp_forecast"].get("forecast"),
         "storm_probability": p["kp_forecast"].get("storm_probability"),
         "peak_arrival_minutes": p["kp_forecast"].get("peak_arrival_minutes"),
+        "warning_minutes": (p.get("solar_wind") or {}).get("warning_minutes"),
         "solar": p["solar_wind"],
         "satellites": p["satellites"][:8],
         "grid": p["grid"][:6],
+        "top_satellites_over_threshold": high_sats[:5],
+        "top_corridors_over_threshold": high_grid[:5],
         "shap_top": (p["shap"].get("features") or [])[:6],
     }

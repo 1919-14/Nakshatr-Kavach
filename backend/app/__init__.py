@@ -3,7 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
-socketio = SocketIO(cors_allowed_origins="*")
+socketio = SocketIO(cors_allowed_origins="*", path="/realtime")
 
 
 def create_app():

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -13,9 +14,17 @@ from app.services.physics import storm_class_from_kp
 
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "ml_models"
-XGB_JOBLIB = MODEL_DIR / "xgb_kp_multi.joblib"
-LSTM_PATH = MODEL_DIR / "lstm_kp.keras"
+MODEL_DIRS = [
+    Path(__file__).resolve().parent.parent / "models",
+    Path(__file__).resolve().parent.parent / "ml_models",
+]
+XGB_CANDIDATES = ["xgb_kp_model.pkl", "xgb_kp_multi.joblib"]
+LSTM_CANDIDATES = ["lstm_kp_model.h5", "lstm_kp.keras"]
+
+try:
+    MC_DROPOUT_PASSES = int(os.environ.get("MC_DROPOUT_PASSES", "32"))
+except (TypeError, ValueError):
+    MC_DROPOUT_PASSES = 32
 
 ROW7_NAMES = ["kp0", "bz", "v", "bt", "n", "south", "p_dyn"]
 
@@ -50,30 +59,48 @@ def features_row7(df: pd.DataFrame) -> np.ndarray:
 
 class KpPredictor:
     def __init__(self):
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        for d in MODEL_DIRS:
+            d.mkdir(parents=True, exist_ok=True)
         self._xgb = None
+        self._xgb_bootstrap = False
         self._load_or_init_xgb()
         self._lstm = None
-        if LSTM_PATH.exists():
-            try:
-                from tensorflow import keras
+        self._load_lstm()
 
-                self._lstm = keras.models.load_model(str(LSTM_PATH))
-                logger.info("Loaded LSTM from %s", LSTM_PATH)
-            except Exception as e:
-                logger.warning("LSTM not loaded: %s", e)
+    def _first_existing(self, names: List[str]) -> Optional[Path]:
+        for d in MODEL_DIRS:
+            for n in names:
+                p = d / n
+                if p.exists():
+                    return p
+        return None
 
     def _load_or_init_xgb(self):
         import joblib
         import xgboost as xgb
 
-        if XGB_JOBLIB.exists():
-            self._xgb = joblib.load(XGB_JOBLIB)
-            logger.info("Loaded XGBoost bundle from %s", XGB_JOBLIB)
+        xgb_path = self._first_existing(XGB_CANDIDATES)
+        if xgb_path is not None:
+            self._xgb = joblib.load(xgb_path)
+            logger.info("Loaded XGBoost bundle from %s", xgb_path)
             return
         self._xgb = self._bootstrap_xgb(xgb)
-        joblib.dump(self._xgb, XGB_JOBLIB)
-        logger.info("Saved bootstrap XGBoost to %s", XGB_JOBLIB)
+        target = MODEL_DIRS[0] / XGB_CANDIDATES[1]
+        joblib.dump(self._xgb, target)
+        self._xgb_bootstrap = True
+        logger.info("Saved bootstrap XGBoost to %s", target)
+
+    def _load_lstm(self):
+        lstm_path = self._first_existing(LSTM_CANDIDATES)
+        if lstm_path is None:
+            return
+        try:
+            from tensorflow import keras
+
+            self._lstm = keras.models.load_model(str(lstm_path))
+            logger.info("Loaded LSTM from %s", lstm_path)
+        except Exception as e:
+            logger.warning("LSTM not loaded: %s", e)
 
     def _bootstrap_xgb(self, xgb_mod) -> Any:
         rng = np.random.default_rng(42)
@@ -125,6 +152,23 @@ class KpPredictor:
             logger.warning("LSTM predict failed: %s", e)
             return None
 
+    def _lstm_mc_dropout(self, df: pd.DataFrame, passes: int = MC_DROPOUT_PASSES) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        if self._lstm is None:
+            return None
+        seq = build_sequence_tensor(df, 24)
+        try:
+            preds: List[np.ndarray] = []
+            for _ in range(max(1, int(passes))):
+                p = self._lstm(seq, training=True)
+                preds.append(np.asarray(p, dtype=np.float32).reshape(1, -1))
+            stack = np.vstack(preds)
+            mean = np.clip(np.mean(stack, axis=0, keepdims=True), 0, 9)
+            std = np.std(stack, axis=0, keepdims=True)
+            return mean, std
+        except Exception as e:
+            logger.warning("LSTM MC-dropout failed: %s", e)
+            return None
+
     def _sequence_surrogate(self, df: pd.DataFrame) -> np.ndarray:
         d = df.sort_values("timestamp") if df is not None and not df.empty else pd.DataFrame()
         if d.empty or len(d) < 3:
@@ -142,7 +186,12 @@ class KpPredictor:
 
     def predict(self, df: pd.DataFrame) -> Dict[str, Any]:
         xgb_raw = self._xgb_horizons(df)
-        lstm_raw = self._lstm_predict(df)
+        lstm_unc = None
+        mc = self._lstm_mc_dropout(df)
+        if mc is not None:
+            lstm_raw, lstm_unc = mc
+        else:
+            lstm_raw = self._lstm_predict(df)
         if lstm_raw is None:
             lstm_raw = self._sequence_surrogate(df)
         if lstm_raw.shape[1] < xgb_raw.shape[1]:
@@ -159,11 +208,22 @@ class KpPredictor:
             xv = float(xgb_raw[0, min(i, xgb_raw.shape[1] - 1)])
             lv = float(lstm_raw[0, min(i, lstm_raw.shape[1] - 1)])
             fused.append(_clip_kp(w * xv + (1 - w) * lv))
-            unc.append(float(0.25 + (1 - w) * 0.45 + abs(xv - lv) * 0.15))
+            base_unc = float(0.25 + (1 - w) * 0.45 + abs(xv - lv) * 0.15)
+            if lstm_unc is not None:
+                lu = float(lstm_unc[0, min(i, lstm_unc.shape[1] - 1)])
+                base_unc = max(base_unc, 0.2 + lu * 0.8)
+            unc.append(base_unc)
 
         kp_now = float(df["kp_current"].iloc[-1]) if df is not None and not df.empty else 2.0
         v_last = float(df["sw_speed_kmps"].iloc[-1]) if df is not None and not df.empty else 400.0
         storm_p = float(min(0.99, max(0.01, (fused[2] - 4) / 5.0)))
+        model_status = "OPERATIONAL"
+        if self._lstm is None and self._xgb_bootstrap:
+            model_status = "DEGRADED_HEURISTIC"
+        elif self._lstm is None:
+            model_status = "DEGRADED_NO_LSTM"
+        elif self._xgb_bootstrap:
+            model_status = "DEGRADED_BOOTSTRAP_XGB"
 
         return {
             "current_kp": kp_now,
@@ -171,6 +231,7 @@ class KpPredictor:
             "storm_probability": storm_p,
             "peak_arrival_minutes": int(1_500_000 / max(v_last, 250) / 60),
             "model_notes": "hybrid_xgb_sequence_or_lstm",
+            "model_status": model_status,
             "forecast": {
                 "kp_3hr": {"value": fused[0], "uncertainty": unc[0]},
                 "kp_6hr": {"value": fused[1], "uncertainty": unc[1]},

@@ -4,19 +4,35 @@ import { useStormStore } from "../store/useStormStore";
 import { HISTORICAL_STORMS } from "../mock/mockData";
 import { getStormClass } from "../utils/stormClassifier";
 
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== "false";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+
 export default function Replay() {
   const [selectedStorm, setSelectedStorm] = useState(null);
   const [frameIndex,    setFrameIndex]    = useState(0);
   const [playing,       setPlaying]       = useState(false);
   const [speed,         setSpeed]         = useState(1);
+  const [apiStorm,      setApiStorm]      = useState(null);
   const timerRef = useRef(null);
   const { setSolarWind, setSatellites } = useStormStore();
+  const mockStorm = selectedStorm ? HISTORICAL_STORMS.find((s) => s.id === selectedStorm) : null;
 
-  const storm  = selectedStorm ? HISTORICAL_STORMS.find(s=>s.id===selectedStorm) : null;
+  const storm  = selectedStorm ? (USE_MOCK ? mockStorm : (apiStorm || mockStorm)) : null;
   const frames = storm?.frames || [];
   const frame  = frames[frameIndex] || null;
   const kp     = frame?.kp ?? 0;
   const sc     = getStormClass(kp);
+
+  useEffect(() => {
+    if (!selectedStorm || USE_MOCK) return;
+    fetch(`${API_BASE}/api/history/${selectedStorm}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => setApiStorm(payload))
+      .catch((error) => {
+        console.warn("Replay API load failed, using fallback storm data.", error);
+        setApiStorm(null);
+      });
+  }, [selectedStorm]);
 
   // Sync frame to store
   useEffect(() => {

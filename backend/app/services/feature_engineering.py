@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import math
+import logging
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 
 from app.services.physics import akasofu_epsilon_W, dynamic_pressure_npa
+
+logger = logging.getLogger(__name__)
 
 
 CORE_SEQUENCE_COLS = [
@@ -27,6 +32,39 @@ CORE_SEQUENCE_COLS = [
     "hour_sin",
     "hour_cos",
 ]
+
+_MODEL_DIRS = [
+    Path(__file__).resolve().parent.parent / "models",
+    Path(__file__).resolve().parent.parent / "ml_models",
+]
+_TAB_SCALER = None
+_SEQ_SCALER = None
+
+
+def _load_scaler(name: str):
+    for d in _MODEL_DIRS:
+        p = d / name
+        if p.exists():
+            try:
+                return joblib.load(p)
+            except Exception as e:
+                logger.warning("Failed to load scaler %s: %s", p, e)
+                return None
+    return None
+
+
+def _get_tab_scaler():
+    global _TAB_SCALER
+    if _TAB_SCALER is None:
+        _TAB_SCALER = _load_scaler("scaler_tabular.joblib")
+    return _TAB_SCALER
+
+
+def _get_seq_scaler():
+    global _SEQ_SCALER
+    if _SEQ_SCALER is None:
+        _SEQ_SCALER = _load_scaler("scaler_seq.joblib")
+    return _SEQ_SCALER
 
 
 def _prep_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -74,6 +112,13 @@ def build_sequence_tensor(df: pd.DataFrame, steps: int = 24) -> np.ndarray:
     if tail.shape[0] < steps:
         pad = np.zeros((steps - tail.shape[0], tail.shape[1]), dtype=np.float32)
         tail = np.vstack([pad, tail])
+    scaler = _get_seq_scaler()
+    if scaler is not None:
+        try:
+            s = scaler.transform(tail)
+            return np.asarray(s, dtype=np.float32).reshape(1, steps, -1)
+        except Exception:
+            pass
     # per-channel minmax on tail only (local normalization)
     t = tail.copy()
     for j in range(t.shape[1]):
@@ -122,4 +167,11 @@ def build_tabular_feature_vector(df: pd.DataFrame) -> Tuple[np.ndarray, List[str
     add("bz_dt_1", float(d["bz_gsm"].diff().iloc[-1] or 0.0))
     add("kp_dt_1", float(d["kp_current"].diff().iloc[-1] or 0.0))
     x = np.array(feats, dtype=np.float32).reshape(1, -1)
+    scaler = _get_tab_scaler()
+    if scaler is not None:
+        try:
+            x = scaler.transform(x)
+            x = np.asarray(x, dtype=np.float32)
+        except Exception:
+            pass
     return x, names
