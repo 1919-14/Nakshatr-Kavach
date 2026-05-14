@@ -1,22 +1,81 @@
-# NAKSHATRA-KAVACH Backend Application
+# backend/app/__init__.py
+"""
+NAKSHATRA-KAVACH — Layer 1: Flask Application Factory
+Creates and configures the Flask app, SocketIO, CORS, blueprints, DB, and scheduler.
+"""
+
+import logging
+import os
+
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
-socketio = SocketIO(cors_allowed_origins="*")
+logger = logging.getLogger(__name__)
+
+# Module-level SocketIO instance (imported by scheduler and ingestion_service)
+socketio = SocketIO()
 
 
-def create_app():
+def create_app(config_object=None) -> Flask:
+    """
+    Flask application factory.
+
+    Args:
+        config_object: Config class or None (auto-detects from FLASK_ENV).
+
+    Returns:
+        Configured Flask application instance.
+    """
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = 'nakshatra-kavach-secret-key'
 
-    CORS(app)
-    socketio.init_app(app, async_mode='threading')
+    # ── Load configuration ──────────────────────────────────────
+    if config_object is None:
+        from config import get_config
+        config_object = get_config()
 
-    from app.db import init_db
+    app.config.from_object(config_object)
+    config_object.init_app(app)
+
+    # ── Database ────────────────────────────────────────────────
+    from app.database.db import init_db, set_db_path
+    set_db_path(app.config["DB_PATH"])
     init_db()
 
-    from app.routes import api_bp
-    app.register_blueprint(api_bp, url_prefix='/api')
+    # ── CORS ────────────────────────────────────────────────────
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}},
+        supports_credentials=True,
+    )
+
+    # ── SocketIO ────────────────────────────────────────────────
+    socketio.init_app(
+        app,
+        cors_allowed_origins=app.config["SOCKETIO_CORS_ALLOWED_ORIGINS"],
+        async_mode=app.config["SOCKETIO_ASYNC_MODE"],
+        logger=False,
+        engineio_logger=False,
+    )
+
+    # ── Register SocketIO event handlers ────────────────────────
+    from socketio_events import register_socketio_events
+    register_socketio_events(socketio)
+
+    # ── Register REST blueprints ─────────────────────────────────
+    from app.routes.solar import solar_bp
+    app.register_blueprint(solar_bp)
+
+    # ── Start background scheduler ───────────────────────────────
+    # Guard: only start in non-testing environments
+    if not app.config.get("TESTING", False):
+        from scheduler import init_scheduler
+        init_scheduler(app)
+
+    logger.info(
+        "NAKSHATRA-KAVACH app created | env=%s | db=%s",
+        os.getenv("FLASK_ENV", "development"),
+        app.config.get("DB_PATH"),
+    )
 
     return app
