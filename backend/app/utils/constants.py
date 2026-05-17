@@ -207,3 +207,28 @@ HISTORY_MAX_RECORDS: int = 10_000
 LOG_FORMAT = "%(asctime)s | %(levelname)8s | %(name)s | %(message)s"
 LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MB
 LOG_FILE_BACKUP_COUNT: int = 5
+
+# -----------------------------------------------------------------------------
+# LAYER 2 FEATURE ENGINEERING CONSTANTS
+# -----------------------------------------------------------------------------
+
+BZ_DANGER_THRESHOLD: float = -5.0
+BZ_SEVERE_THRESHOLD: float = -10.0
+BZ_EXTREME_THRESHOLD: float = -20.0
+EPSILON_SCALE_FACTOR: float = 1e10
+L0_KM: float = 7 * 6371.0
+SEQUENCE_LENGTH: int = 24
+N_SEQUENCE_FEATURES: int = 15
+N_XGB_FEATURES: int = 45
+SCALER_XGB_PATH: str = "app/models/xgb_scaler.pkl"
+SCALER_LSTM_PATH: str = "app/models/lstm_scaler.pkl"
+FEATURE_IMPUTATION_VALUES: dict = {
+    "bz": 0.0,
+    "bt": 5.0,
+    "speed": 450.0,
+    "density": 5.0,
+    "epsilon": 0.0,
+    "xray": 0.0,
+    "kp": 1.0,
+    "cme_arrival": 48.0,
+}

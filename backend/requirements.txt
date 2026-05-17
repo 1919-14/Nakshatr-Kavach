@@ -10,6 +10,16 @@ gunicorn==22.0.0
 
 # Numerical computation
 numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.0
+joblib==1.4.2
+pymysql==1.1.1
+SQLAlchemy==2.0.30
+
+# Analysis notebooks
+matplotlib==3.9.0
+seaborn==0.13.2
+jupyter==1.0.0
 
 # Testing
 pytest==8.2.0

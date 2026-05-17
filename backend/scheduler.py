@@ -58,10 +58,28 @@ scheduler.add_listener(_on_job_executed, EVENT_JOB_EXECUTED)
 def _job_solar_wind_and_kp() -> None:
     """
     Job 1: Poll NOAA solar wind and Kp every 60 seconds.
-    Fetches, validates, updates snapshot, and persists to DB.
+    Fetches, validates, updates snapshot, persists to DB, and triggers Layer 2.
     """
     from app.services.ingestion_service import run_solar_wind_and_kp_poll
     run_solar_wind_and_kp_poll()
+    try:
+        from app.services.feature_engineering import compute_features_realtime, update_latest_features
+
+        feature_result = compute_features_realtime()
+        if feature_result:
+            update_latest_features(feature_result)
+            metadata = feature_result.get("feature_metadata", {})
+            features = metadata.get("features", [])
+            bz_value = features[0]["value"] if len(features) > 0 else 0.0
+            epsilon_value = features[19]["value"] if len(features) > 19 else 0.0
+            logger.info(
+                "Features computed: Bz=%.1f Eps=%.2f Quality=%s",
+                bz_value,
+                epsilon_value,
+                feature_result.get("data_quality", "UNKNOWN"),
+            )
+    except Exception as exc:
+        logger.error("Layer 2 feature engineering trigger failed: %s", exc, exc_info=True)
 
 
 def _job_xray_and_alerts() -> None:

@@ -65,6 +65,8 @@ def create_app(config_object=None) -> Flask:
     # ── Register REST blueprints ─────────────────────────────────
     from app.routes.solar import solar_bp
     app.register_blueprint(solar_bp)
+    from app.routes.features import features_bp
+    app.register_blueprint(features_bp)
 
     # ── Start background scheduler ───────────────────────────────
     # Guard: only start in non-testing environments
