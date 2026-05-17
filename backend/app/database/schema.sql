@@ -126,3 +126,74 @@ CREATE TABLE IF NOT EXISTS ingestion_log (
 
 CREATE INDEX IF NOT EXISTS idx_log_source  ON ingestion_log(source_name, poll_timestamp_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_log_success ON ingestion_log(success);
+
+
+-- ─────────────────────────────────────────────────────────────────
+-- TABLE: kp_forecast_history
+-- Layer 3 Kp prediction snapshots for accuracy tracking and history API.
+-- ─────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS kp_forecast_history (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    computed_at_utc         VARCHAR(32) NOT NULL,
+    kp_current              DOUBLE,
+    storm_class_current     VARCHAR(8),
+    kp_forecast_3hr         DOUBLE,
+    kp_forecast_6hr         DOUBLE,
+    kp_forecast_12hr        DOUBLE,
+    kp_forecast_24hr        DOUBLE,
+    uncertainty_3hr         DOUBLE,
+    uncertainty_6hr         DOUBLE,
+    uncertainty_12hr        DOUBLE,
+    uncertainty_24hr        DOUBLE,
+    peak_storm_class        VARCHAR(8),
+    storm_probability_12hr  DOUBLE,
+    prediction_confidence   VARCHAR(16),
+    inference_time_ms       DOUBLE,
+    data_quality_used       VARCHAR(16),
+    shap_top_feature        VARCHAR(64),
+    shap_top_value          DOUBLE,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS idx_kp_hist_time ON kp_forecast_history(computed_at_utc DESC);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LAYER 4: Satellite Vulnerability Scoring
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS satellite_risk_history (
+    id                  INTEGER PRIMARY KEY AUTO_INCREMENT,
+    computed_at_utc     TEXT NOT NULL,
+    satellite_name      TEXT NOT NULL,
+    kp_used             DOUBLE,
+    drag_risk           DOUBLE,
+    charging_risk       DOUBLE,
+    radiation_risk      DOUBLE,
+    composite_final     DOUBLE,
+    risk_level          VARCHAR(16),
+    safe_mode_required  INTEGER,
+    safe_mode_minutes   DOUBLE,
+    recommended_action  TEXT,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS idx_sat_risk_name_time
+    ON satellite_risk_history(satellite_name(64), computed_at_utc(32) DESC);
+CREATE INDEX IF NOT EXISTS idx_sat_risk_level
+    ON satellite_risk_history(risk_level, computed_at_utc(32) DESC);
+
+CREATE TABLE IF NOT EXISTS satellite_events (
+    id                  INTEGER PRIMARY KEY AUTO_INCREMENT,
+    event_timestamp_utc TEXT NOT NULL,
+    satellite_name      TEXT NOT NULL,
+    event_type          VARCHAR(32) NOT NULL,
+    previous_risk_level VARCHAR(16),
+    new_risk_level      VARCHAR(16),
+    kp_at_event         DOUBLE,
+    event_description   TEXT,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX IF NOT EXISTS idx_sat_events_name
+    ON satellite_events(satellite_name(64), event_timestamp_utc(32) DESC);
+

@@ -79,3 +79,5 @@ frontend/build/
 *.jpg
 *.png
 !frontend/public/textures/.gitkeep
+download_data/raw/
+download_data/venv/

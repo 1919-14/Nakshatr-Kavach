@@ -232,3 +232,195 @@ FEATURE_IMPUTATION_VALUES: dict = {
     "kp": 1.0,
     "cme_arrival": 48.0,
 }
+
+# -----------------------------------------------------------------------------
+# LAYER 3 KP PREDICTION ENGINE CONSTANTS
+# -----------------------------------------------------------------------------
+
+# Hybrid fusion weights: XGBoost dominates short-term, LSTM dominates long-term
+XGB_LSTM_WEIGHTS: dict = {
+    "3hr":  {"xgb": 0.70, "lstm": 0.30},
+    "6hr":  {"xgb": 0.55, "lstm": 0.45},
+    "12hr": {"xgb": 0.30, "lstm": 0.70},
+    "24hr": {"xgb": 0.15, "lstm": 0.85},
+}
+
+# Monte Carlo Dropout sample count for uncertainty quantification
+N_MC_SAMPLES: int = 100
+
+# NOAA Kp storm classification thresholds
+KP_STORM_THRESHOLDS: dict = {
+    "G1": 5.0,
+    "G2": 6.0,
+    "G3": 7.0,
+    "G4": 8.0,
+    "G5": 9.0,
+}
+
+# Storm class dashboard colours
+STORM_COLORS: dict = {
+    "G5":      "#9C27B0",
+    "G4":      "#F44336",
+    "G3":      "#FF9800",
+    "G2":      "#CDDC39",
+    "G1":      "#4CAF50",
+    "QUIET":   "#607D8B",
+    "UNKNOWN": "#9E9E9E",
+}
+
+# Model file paths (relative to backend/)
+XGB_MODEL_PATHS: dict = {
+    "3hr":  "app/models/xgb_kp_3hr.json",
+    "6hr":  "app/models/xgb_kp_6hr.json",
+    "12hr": "app/models/xgb_kp_12hr.json",
+    "24hr": "app/models/xgb_kp_24hr.json",
+}
+LSTM_MODEL_PATH: str = "app/models/lstm_kp_model.keras"
+SHAP_EXPLAINER_PATHS: dict = {
+    "3hr":  "app/models/shap_xgb_3hr.pkl",
+    "6hr":  "app/models/shap_xgb_6hr.pkl",
+    "12hr": "app/models/shap_xgb_12hr.pkl",
+    "24hr": "app/models/shap_xgb_24hr.pkl",
+}
+
+# Uncertainty multipliers based on data quality
+UNCERTAINTY_MULTIPLIERS: dict = {
+    "GOOD":    1.0,
+    "PARTIAL": 1.3,
+    "STALE":   1.8,
+    "UNKNOWN": 2.0,
+}
+
+# XGBoost horizon-specific hyperparameters
+XGB_HORIZON_PARAMS: dict = {
+    "3hr":  {"n_estimators": 500, "max_depth": 6, "reg_alpha": 0.1, "reg_lambda": 1.0},
+    "6hr":  {"n_estimators": 600, "max_depth": 6, "reg_alpha": 0.1, "reg_lambda": 1.5},
+    "12hr": {"n_estimators": 700, "max_depth": 6, "reg_alpha": 0.3, "reg_lambda": 2.0},
+    "24hr": {"n_estimators": 800, "max_depth": 5, "reg_alpha": 0.1, "reg_lambda": 3.0},
+}
+
+# Kp forecast history retention (days)
+RETENTION_KP_FORECAST_DAYS: int = 30
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LAYER 4 — Satellite Vulnerability Scoring Engine
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Risk level thresholds (composite score → risk level)
+RISK_LEVEL_THRESHOLDS: dict = {
+    "CRITICAL": 80.0,
+    "HIGH":     60.0,
+    "MODERATE": 40.0,
+    "LOW":      20.0,
+    "MINIMAL":   0.0,
+}
+
+# Risk level → numeric (for sorting/comparison)
+RISK_LEVEL_NUMERIC: dict = {
+    "CRITICAL": 4,
+    "HIGH":     3,
+    "MODERATE": 2,
+    "LOW":      1,
+    "MINIMAL":  0,
+}
+
+# Risk level → hex colour for dashboard display
+RISK_LEVEL_COLORS: dict = {
+    "CRITICAL": "#D50000",
+    "HIGH":     "#FF6D00",
+    "MODERATE": "#FFD600",
+    "LOW":      "#00C853",
+    "MINIMAL":  "#607D8B",
+}
+
+# Orbit type classification by altitude (km)
+ORBIT_TYPE_DEFINITIONS: dict = {
+    "LEO":      {"min_alt": 0,      "max_alt": 2000},
+    "MEO":      {"min_alt": 2000,   "max_alt": 20000},
+    "GEO":      {"min_alt": 35286,  "max_alt": 36286},
+    "IGSO":     {"min_alt": 35286,  "max_alt": 36286},
+    "L1_HALO":  {"min_alt": 1000000, "max_alt": 2000000},
+}
+
+# Criticality multipliers — scale composite risk for mission-critical assets
+CRITICALITY_MULTIPLIERS: dict = {
+    "NATIONAL_CRITICAL": 1.5,
+    "DEFENSE_CRITICAL":  1.6,
+    "HIGH":              1.3,
+    "MODERATE":          1.0,
+    "SCIENCE":           1.0,
+}
+
+# Shielding factors — surface charging risk scaling
+SHIELDING_FACTORS: dict = {
+    "HIGH":   0.6,
+    "MEDIUM": 1.0,
+    "LOW":    1.4,
+}
+
+# Composite risk weights by orbit type
+ORBIT_RISK_WEIGHTS: dict = {
+    "GEO":      {"drag": 0.00, "charging": 0.70, "seu": 0.30},
+    "IGSO":     {"drag": 0.00, "charging": 0.70, "seu": 0.30},
+    "GEO_IGSO": {"drag": 0.00, "charging": 0.70, "seu": 0.30},
+    "LEO":      {"drag": 0.55, "charging": 0.00, "seu": 0.45},
+    "MEO":      {"drag": 0.20, "charging": 0.40, "seu": 0.40},
+    "L1_HALO":  {"drag": 0.00, "charging": 0.00, "seu": 1.00},
+}
+
+# Altitude scale factors for drag risk normalisation
+ALTITUDE_DRAG_SCALES: dict = {
+    400:  0.5,   # < 400 km: extremely high drag risk
+    500:  0.7,   # 400–500 km
+    600:  1.0,   # 500–600 km (reference altitude)
+    800:  1.4,   # 600–800 km
+    9999: 2.5,   # > 800 km: minimal drag
+}
+
+# X-ray severity → SEU enhancement factor
+XRAY_SEU_FACTORS: dict = {
+    0: 1.0,   # No data / below detection
+    1: 1.0,   # A-class
+    2: 1.1,   # B-class
+    3: 1.3,   # C-class
+    4: 1.8,   # M-class
+    5: 3.0,   # X-class
+}
+
+# Physics constants for Jacchia-77 simplified atmosphere model
+JACCHIA_SCALE_HEIGHT_KM: float = 70.0
+LEO_REFERENCE_DENSITY_KG_M3: float = 5.0e-13   # ρ at 500 km quiet
+DRAG_NORMALIZATION_FACTOR: float = 20.0          # normaliser for risk 0–100
+CHARGING_EXPONENT: float = 1.8                   # non-linear electron energisation
+
+# SAA (South Atlantic Anomaly) amplification
+SAA_AMPLIFICATION_BASE: float = 4.0
+
+# Safe mode operational buffer
+SAFE_MODE_BUFFER_MINUTES: int = 20
+SAFE_MODE_EXECUTION_MINUTES: int = 15
+SAFE_MODE_AUTHORIZATION_MINUTES: int = 5
+
+# Horizon label → minutes mapping
+HORIZON_MINUTES: dict = {
+    "3hr": 180, "6hr": 360, "12hr": 720, "24hr": 1440,
+}
+
+# WebSocket event for satellite risk changes
+WS_EVENT_SATELLITE_RISK_CHANGE: str = "satellite_risk_change"
+
+# Satellite risk history retention
+RETENTION_SATELLITE_RISK_DAYS: int = 30
+RETENTION_SATELLITE_EVENTS_DAYS: int = 90
+
+# Earth constants for orbit visualisation
+EARTH_RADIUS_KM: float = 6371.0
+EARTH_RADIUS_3JS: float = 2.0
+
+# Satellite data file path
+ISRO_SATELLITES_JSON_PATH: str = "app/data/isro_satellites.json"
+
+# NavIC degradation thresholds
+NAVIC_DEGRADATION_KP: float = 5.0
+NAVIC_IMPAIRED_KP: float = 7.0
+NAVIC_AFFECTED_USERS_MILLION: int = 500

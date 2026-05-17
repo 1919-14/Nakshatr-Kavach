@@ -78,6 +78,53 @@ def _job_solar_wind_and_kp() -> None:
                 epsilon_value,
                 feature_result.get("data_quality", "UNKNOWN"),
             )
+
+            # ── Layer 3: Kp Prediction Engine ──
+            try:
+                from app.services.kp_predictor import (
+                    model_loader, run_inference_cycle,
+                    update_latest_kp_forecast, save_forecast_to_db,
+                )
+                if model_loader.are_loaded():
+                    import time as _time
+                    t0 = _time.perf_counter()
+                    forecast = run_inference_cycle(feature_result)
+                    elapsed_ms = (_time.perf_counter() - t0) * 1000
+                    forecast["inference_time_ms"] = round(elapsed_ms, 1)
+                    update_latest_kp_forecast(forecast)
+                    save_forecast_to_db(forecast)
+
+                    # Trigger storm alert WebSocket if storm class changed
+                    from app.services.storm_alert import check_and_emit_storm_alert
+                    check_and_emit_storm_alert(forecast)
+
+                    # ── Layer 4: Satellite Vulnerability Scoring ──
+                    try:
+                        from app.services.satellite_scorer import (
+                            run_satellite_scoring, update_latest_satellite_risks,
+                            get_latest_satellite_risks, save_satellite_risks_to_db,
+                            check_and_emit_satellite_alerts,
+                        )
+                        from app.services.ingestion_service import get_snapshot
+                        snapshot = get_snapshot()
+                        if snapshot:
+                            prev_risks = get_latest_satellite_risks()
+                            sat_risks = run_satellite_scoring(forecast, snapshot)
+                            update_latest_satellite_risks(sat_risks)
+                            save_satellite_risks_to_db(sat_risks)
+                            check_and_emit_satellite_alerts(sat_risks, prev_risks)
+                            logger.info(
+                                "Satellite scoring: Critical=%d High=%d Top=%s@%.0f",
+                                sat_risks["critical_count"], sat_risks["high_count"],
+                                sat_risks["fleet_summary"]["highest_risk_satellite"],
+                                sat_risks["fleet_summary"]["highest_risk_score"])
+                    except Exception as l4_exc:
+                        logger.error("Layer 4 satellite scoring failed: %s", l4_exc, exc_info=True)
+
+                else:
+                    logger.debug("Layer 3 models not yet loaded — skipping inference")
+            except Exception as l3_exc:
+                logger.error("Layer 3 inference trigger failed: %s", l3_exc, exc_info=True)
     except Exception as exc:
         logger.error("Layer 2 feature engineering trigger failed: %s", exc, exc_info=True)
 

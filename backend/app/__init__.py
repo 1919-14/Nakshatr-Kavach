@@ -62,11 +62,29 @@ def create_app(config_object=None) -> Flask:
     from socketio_events import register_socketio_events
     register_socketio_events(socketio)
 
-    # ── Register REST blueprints ─────────────────────────────────
+    # ── Register REST blueprints ─────────────────────────────────────
     from app.routes.solar import solar_bp
     app.register_blueprint(solar_bp)
     from app.routes.features import features_bp
     app.register_blueprint(features_bp)
+    from app.routes.kp_forecast import kp_bp
+    app.register_blueprint(kp_bp)
+    from app.routes.satellites import satellites_bp
+    app.register_blueprint(satellites_bp)
+
+    # ── Load Layer 3 prediction models ─────────────────────────────
+    try:
+        from app.services.kp_predictor import model_loader
+        model_loader.load_all()
+    except Exception as exc:
+        logger.warning("Layer 3 model loading failed (degraded mode): %s", exc)
+
+    # ── Load Layer 4 satellite database ────────────────────────────
+    try:
+        from app.services.satellite_scorer import sat_db
+        sat_db.load()
+    except Exception as exc:
+        logger.warning("Layer 4 satellite DB loading failed: %s", exc)
 
     # ── Start background scheduler ───────────────────────────────
     # Guard: only start in non-testing environments
