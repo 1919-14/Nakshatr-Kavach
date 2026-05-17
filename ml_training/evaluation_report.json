@@ -1,0 +1,326 @@
+{
+  "horizons": {
+    "3hr": {
+      "xgboost": {
+        "rmse": 1.0535,
+        "mae": 0.5317,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8915,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      },
+      "lstm": {
+        "rmse": 0.9582,
+        "mae": 0.5178,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8891,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      }
+    },
+    "6hr": {
+      "xgboost": {
+        "rmse": 0.9267,
+        "mae": 0.4721,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8915,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      },
+      "lstm": {
+        "rmse": 0.9109,
+        "mae": 0.4752,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8891,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      }
+    },
+    "12hr": {
+      "xgboost": {
+        "rmse": 0.925,
+        "mae": 0.4867,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8915,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      },
+      "lstm": {
+        "rmse": 0.9258,
+        "mae": 0.4888,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8891,
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      }
+    },
+    "24hr": {
+      "xgboost": {
+        "rmse": 0.688,
+        "mae": 0.396,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8916,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      },
+      "lstm": {
+        "rmse": 0.691,
+        "mae": 0.4005,
+        "storm_precision_g3": 0.0,
+        "storm_recall_g3": 0.0,
+        "storm_f1_g3": 0.0,
+        "confusion_matrix": [
+          [
+            8892,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "confusion_labels": [
+          "QUIET",
+          "G1",
+          "G2",
+          "G3+"
+        ]
+      }
+    }
+  },
+  "test_set": "may2024_g5_storm_real",
+  "test_rows": 8916
+}

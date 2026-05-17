@@ -201,32 +201,62 @@ class ModelLoader:
         return loaded == 4
 
     def _load_lstm_model(self) -> bool:
-        if not os.path.exists(LSTM_MODEL_PATH):
-            logger.warning("LSTM model not found: %s", LSTM_MODEL_PATH)
-            return False
+        # Support both PyTorch (.pt) and Keras (.keras) model files
+        pt_path = str(LSTM_MODEL_PATH).replace(".keras", ".pt")
+        load_path = pt_path if os.path.exists(pt_path) else LSTM_MODEL_PATH
+        if not os.path.exists(load_path):
+            logger.warning("LSTM model not found: %s", load_path)
         try:
-            import tensorflow as tf
-            self.lstm_model = tf.keras.models.load_model(
-                LSTM_MODEL_PATH,
-                custom_objects={"storm_weighted_huber": storm_weighted_huber},
-            )
-            dummy = np.zeros((1, 24, 15), dtype=np.float32)
-            _ = self.lstm_model(dummy, training=True)
-            logger.info("LSTM model loaded and warmed up from %s", LSTM_MODEL_PATH)
+            if str(load_path).endswith(".pt"):
+                import torch, importlib, sys
+                from pathlib import Path
+                root_dir = str(Path(__file__).resolve().parents[3])
+                if root_dir not in sys.path:
+                    sys.path.insert(0, root_dir)
+                _lstm_mod = importlib.import_module("ml_training.04_train_lstm")
+                NakshatraLSTM = _lstm_mod.NakshatraLSTM
+                ckpt = torch.load(load_path, map_location="cpu", weights_only=False)
+                n_features = ckpt.get("n_features", 72)
+                seq_len    = ckpt.get("seq_len", 24)
+                model = NakshatraLSTM(n_features=n_features, seq_len=seq_len)
+                model.load_state_dict(ckpt["model_state_dict"])
+                model.eval()
+                self.lstm_model = model
+                self._lstm_backend = "pytorch"
+                self._lstm_n_features = n_features
+                self._lstm_seq_len = seq_len
+                logger.info("PyTorch LSTM loaded from %s (features=%d)", load_path, n_features)
+            else:
+                import tensorflow as tf
+                self.lstm_model = tf.keras.models.load_model(
+                    load_path,
+                    custom_objects={"storm_weighted_huber": storm_weighted_huber},
+                )
+                self._lstm_backend = "tensorflow"
+                self._lstm_n_features = 72
+                self._lstm_seq_len = 24
+                dummy = np.zeros((1, 24, self._lstm_n_features), dtype=np.float32)
+                _ = self.lstm_model(dummy, training=True)
+                logger.info("TF LSTM loaded from %s", load_path)
             return True
         except Exception as e:
             logger.warning("LSTM load failed: %s", e)
             return False
 
     def _load_shap_explainers(self, joblib: Any) -> None:
+        try:
+            import shap
+        except ImportError:
+            logger.warning("shap not installed — explainability unavailable")
+            return
+            
         for horizon in ["3hr", "6hr", "12hr", "24hr"]:
-            path = SHAP_EXPLAINER_PATHS[horizon]
-            if os.path.exists(path):
+            if horizon in self.xgb_models:
                 try:
-                    self.shap_explainers[horizon] = joblib.load(path)
-                    logger.info("Loaded SHAP explainer for %s", horizon)
+                    self.shap_explainers[horizon] = shap.TreeExplainer(self.xgb_models[horizon])
+                    logger.info("Initialized SHAP explainer for %s", horizon)
                 except Exception as e:
-                    logger.warning("SHAP explainer load failed for %s: %s", horizon, e)
+                    logger.warning("SHAP explainer init failed for %s: %s", horizon, e)
 
     def _init_shap_analyzer(self) -> None:
         from app.services.feature_engineering import FEATURE_NAMES
@@ -298,7 +328,11 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
     # ── LSTM MC Dropout ──
     t_lstm = time.perf_counter()
     if model_loader.lstm_model is not None:
-        lstm_preds = predict_with_uncertainty(model_loader.lstm_model, lstm_seq_scaled, n_samples=N_MC_SAMPLES)
+        backend = getattr(model_loader, "_lstm_backend", "tensorflow")
+        if backend == "pytorch":
+            lstm_preds = _predict_pytorch_lstm(model_loader.lstm_model, lstm_seq_scaled, n_samples=N_MC_SAMPLES)
+        else:
+            lstm_preds = predict_with_uncertainty(model_loader.lstm_model, lstm_seq_scaled, n_samples=N_MC_SAMPLES)
     else:
         # Degraded: synthesise LSTM-like output from XGBoost predictions
         lstm_preds = _synthesise_lstm_preds(xgb_preds)
@@ -368,6 +402,48 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning("Inference exceeded 1000ms target: %.0fms", total_ms)
 
     return forecast
+
+
+def _predict_pytorch_lstm(model: Any, lstm_seq: np.ndarray,
+                           n_samples: int = 50) -> Dict[str, Any]:
+    """
+    PyTorch MC-Dropout inference: runs the model n_samples times with
+    dropout enabled to produce uncertainty estimates. Produces the same
+    output dict format as predict_with_uncertainty (TensorFlow version).
+    """
+    import torch
+    x = torch.from_numpy(lstm_seq.astype(np.float32))
+    if x.ndim == 2:
+        x = x.unsqueeze(0)   # (1, seq_len, n_features)
+    # MC Dropout — keep dropout active during inference
+    model.train()
+    all_preds = []
+    with torch.no_grad():
+        for _ in range(n_samples):
+            pred = model(x).cpu().numpy()   # (1, 4)
+            all_preds.append(np.clip(pred[0], 0.0, 9.0))
+    model.eval()
+
+    all_preds = np.array(all_preds)  # (n_samples, 4)
+    results: Dict[str, Any] = {}
+    for i, (name, hours) in enumerate(zip(["3hr", "6hr", "12hr", "24hr"], [3, 6, 12, 24])):
+        samples = all_preds[:, i]
+        from app.services.kp_utils import classify_kp_to_storm as _cls
+        results[f"kp_{name}"] = {
+            "mean": round(float(np.mean(samples)), 2),
+            "std":  round(float(np.std(samples)), 2),
+            "p5":   round(float(np.percentile(samples, 5)), 2),
+            "p95":  round(float(np.percentile(samples, 95)), 2),
+            "storm_class": _cls(float(np.mean(samples))),
+            "p_storm_g1": round(float(np.mean(samples >= 5.0)), 3),
+            "p_storm_g2": round(float(np.mean(samples >= 6.0)), 3),
+            "p_storm_g3": round(float(np.mean(samples >= 7.0)), 3),
+            "p_storm_g4": round(float(np.mean(samples >= 8.0)), 3),
+            "p_storm_g5": round(float(np.mean(samples >= 9.0)), 3),
+            "mc_samples": samples.tolist(),
+            "forecast_horizon_hours": hours,
+        }
+    return results
 
 
 def _synthesise_lstm_preds(xgb_preds: Dict[str, float]) -> Dict[str, Any]:

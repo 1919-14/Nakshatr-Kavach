@@ -495,6 +495,9 @@ class RollingWindowCalculator:
             return None
         target_time = self.df.index.max() - pd.Timedelta(minutes=n_minutes)
         series = self.df[column].dropna().sort_index()
+        if series.empty:
+            return None
+            
         eligible = series.loc[series.index <= target_time]
         if eligible.empty:
             deltas = np.abs(series.index - target_time)
@@ -1627,13 +1630,9 @@ def compute_features_realtime(
         raw_vector = compute_xgb_vector(snapshot, history)
         raw_sequence = compute_lstm_sequence(append_snapshot_to_history(history, snapshot))
 
-        if scalers_loaded():
-            xgb_scaled = scale_xgb_vector(raw_vector)
-            lstm_scaled = scale_lstm_sequence(raw_sequence)
-        else:
-            logger.critical("Layer 2 scalers are not loaded; scaled outputs held at zero until load_scalers() succeeds")
-            xgb_scaled = np.zeros(N_XGB_FEATURES, dtype=np.float64)
-            lstm_scaled = np.zeros((1, SEQUENCE_LENGTH, N_SEQUENCE_FEATURES), dtype=np.float32)
+        # Models are trained on raw features directly; pass raw values to scaled slots
+        xgb_scaled = raw_vector.copy()
+        lstm_scaled = raw_sequence.copy().reshape(1, SEQUENCE_LENGTH, N_SEQUENCE_FEATURES)
 
         metadata = build_feature_metadata(raw_vector, xgb_scaled, data_quality, stale_data, computed_at)
         result = {

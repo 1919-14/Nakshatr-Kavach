@@ -110,7 +110,7 @@ def retry_request(
 def fetch_solar_wind() -> Optional[Dict[str, Any]]:
     """
     Poll the NOAA SWPC real-time solar wind endpoint.
-    Falls back to ACE backup if DSCOVR is inactive.
+    The RTSW stream automatically combines DSCOVR and ACE telemetry.
 
     Returns:
         Dict of the most recent solar wind record, or None on failure.
@@ -120,23 +120,11 @@ def fetch_solar_wind() -> Optional[Dict[str, Any]]:
     data = retry_request(NOAA_SOLAR_WIND_URL, source_name="noaa_swpc")
 
     if not data or not isinstance(data, list):
-        logger.error("Solar wind fetch returned no data — trying ACE backup")
-        data = retry_request(ACE_BACKUP_URL, source_name="ace_backup")
-        if not data or not isinstance(data, list):
-            return None
+        logger.error("Solar wind fetch returned no data")
+        return None
 
     # Most recent reading is last item
     latest = data[-1]
-
-    # If DSCOVR is inactive, fall back to ACE
-    if not latest.get("active", True):
-        logger.warning(
-            "DSCOVR inactive (active=false) — falling back to ACE backup"
-        )
-        ace_data = retry_request(ACE_BACKUP_URL, source_name="ace_backup")
-        if ace_data and isinstance(ace_data, list):
-            latest = ace_data[-1]
-            latest["_used_ace_fallback"] = True
 
     if latest.get("bz_gsm") is None:
         logger.warning(

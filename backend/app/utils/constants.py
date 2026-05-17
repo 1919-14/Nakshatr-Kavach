@@ -15,7 +15,7 @@ NOAA_KP_INDEX_URL = (
     "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 )
 NOAA_XRAY_FLUX_URL = (
-    "https://services.swpc.noaa.gov/json/goes/primary/xray-fluxes-7-day.json"
+    "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json"
 )
 NOAA_ALERTS_URL = (
     "https://services.swpc.noaa.gov/products/alerts.json"

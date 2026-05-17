@@ -59,9 +59,9 @@ CREATE TABLE IF NOT EXISTS solar_wind_readings (
     UNIQUE KEY uq_timestamp (timestamp_utc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_sw_timestamp ON solar_wind_readings(timestamp_utc DESC);
-CREATE INDEX IF NOT EXISTS idx_sw_quality   ON solar_wind_readings(data_quality_flag);
-CREATE INDEX IF NOT EXISTS idx_sw_ingested  ON solar_wind_readings(ingested_at DESC);
+CREATE INDEX idx_sw_timestamp ON solar_wind_readings(timestamp_utc DESC);
+CREATE INDEX idx_sw_quality   ON solar_wind_readings(data_quality_flag);
+CREATE INDEX idx_sw_ingested  ON solar_wind_readings(ingested_at DESC);
 
 
 -- ─────────────────────────────────────────────────────────────────
@@ -86,8 +86,8 @@ CREATE TABLE IF NOT EXISTS cme_events (
     created_at                      DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_cme_arrival ON cme_events(estimated_arrival_utc);
-CREATE INDEX IF NOT EXISTS idx_cme_active  ON cme_events(active, is_earth_directed);
+CREATE INDEX idx_cme_arrival ON cme_events(estimated_arrival_utc);
+CREATE INDEX idx_cme_active  ON cme_events(active, is_earth_directed);
 
 
 -- ─────────────────────────────────────────────────────────────────
@@ -105,8 +105,8 @@ CREATE TABLE IF NOT EXISTS noaa_alerts (
     UNIQUE KEY uq_product (product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_alert_issued ON noaa_alerts(issue_datetime_utc DESC);
-CREATE INDEX IF NOT EXISTS idx_alert_class  ON noaa_alerts(storm_class);
+CREATE INDEX idx_alert_issued ON noaa_alerts(issue_datetime_utc DESC);
+CREATE INDEX idx_alert_class  ON noaa_alerts(storm_class);
 
 
 -- ─────────────────────────────────────────────────────────────────
@@ -124,8 +124,8 @@ CREATE TABLE IF NOT EXISTS ingestion_log (
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_log_source  ON ingestion_log(source_name, poll_timestamp_utc DESC);
-CREATE INDEX IF NOT EXISTS idx_log_success ON ingestion_log(success);
+CREATE INDEX idx_log_source  ON ingestion_log(source_name, poll_timestamp_utc DESC);
+CREATE INDEX idx_log_success ON ingestion_log(success);
 
 
 -- ─────────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS kp_forecast_history (
     created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_kp_hist_time ON kp_forecast_history(computed_at_utc DESC);
+CREATE INDEX idx_kp_hist_time ON kp_forecast_history(computed_at_utc DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- LAYER 4: Satellite Vulnerability Scoring
@@ -177,9 +177,9 @@ CREATE TABLE IF NOT EXISTS satellite_risk_history (
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_sat_risk_name_time
+CREATE INDEX idx_sat_risk_name_time
     ON satellite_risk_history(satellite_name(64), computed_at_utc(32) DESC);
-CREATE INDEX IF NOT EXISTS idx_sat_risk_level
+CREATE INDEX idx_sat_risk_level
     ON satellite_risk_history(risk_level, computed_at_utc(32) DESC);
 
 CREATE TABLE IF NOT EXISTS satellite_events (
@@ -194,6 +194,6 @@ CREATE TABLE IF NOT EXISTS satellite_events (
     created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_sat_events_name
+CREATE INDEX idx_sat_events_name
     ON satellite_events(satellite_name(64), event_timestamp_utc(32) DESC);
 

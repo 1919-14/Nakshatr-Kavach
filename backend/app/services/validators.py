@@ -425,6 +425,11 @@ def kp_to_storm_class(kp: Optional[float]) -> str:
     """
     if kp is None:
         return "QUIET"
+    try:
+        kp = float(kp)
+    except (TypeError, ValueError):
+        return "QUIET"
+        
     if kp >= 9.0:
         return "G5"
     if kp >= 8.0:

@@ -72,6 +72,13 @@ def create_app(config_object=None) -> Flask:
     from app.routes.satellites import satellites_bp
     app.register_blueprint(satellites_bp)
 
+    # ── Load Layer 2 Scalers ───────────────────────────────────────
+    try:
+        from app.services.feature_engineering import load_scalers
+        load_scalers()
+    except Exception as exc:
+        logger.warning("Layer 2 scalers loading failed: %s", exc)
+
     # ── Load Layer 3 prediction models ─────────────────────────────
     try:
         from app.services.kp_predictor import model_loader

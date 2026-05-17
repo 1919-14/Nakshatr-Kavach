@@ -140,7 +140,46 @@ def train_and_save() -> None:
     print("NAKSHATRA-KAVACH — XGBoost Kp Model Training")
     print("=" * 70)
 
-    X, targets = generate_synthetic_training_data(n_samples=10000)
+    # ── Load Real or Synthetic Data ──────────────────────────────────────────
+    parquet_path = ROOT / "download_data" / "raw" / "training_xgb.parquet"
+    if parquet_path.exists():
+        print(f"Loading REAL NASA OMNI + GFZ Potsdam dataset: {parquet_path}")
+        df = pd.read_parquet(parquet_path)
+        print(f"  Loaded {len(df):,} rows of real satellite solar wind data.")
+
+        # Extract targets
+        targets = {
+            "3hr":  df["kp_target_3hr"].values,
+            "6hr":  df["kp_target_6hr"].values,
+            "12hr": df["kp_target_12hr"].values,
+            "24hr": df["kp_target_24hr"].values,
+        }
+
+        # Feature columns = everything except timestamps and targets
+        drop_cols = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
+                     "kp_target_12hr", "kp_target_24hr"]
+        feat_cols = [c for c in df.columns if c not in drop_cols]
+        print(f"  Using {len(feat_cols)} physical features: {feat_cols[:5]} ...")
+        X = df[feat_cols].values.astype(np.float32)
+
+        # Clean NaN/inf
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        for k in targets:
+            targets[k] = np.nan_to_num(targets[k], nan=0.0)
+    else:
+        print("WARNING: Real dataset not found. Using synthetic fallback.")
+        X, targets = generate_synthetic_training_data(n_samples=10000)
+
+    # ── Detect GPU (RTX 4050 CUDA) ───────────────────────────────────────────
+    gpu_available = False
+    try:
+        dmat = xgb.DMatrix(np.random.randn(10, 2), label=np.random.randn(10))
+        xgb.train({"device": "cuda", "tree_method": "hist"}, dmat, num_boost_round=1)
+        gpu_available = True
+        print("RTX 4050 CUDA detected! XGBoost will train on GPU.")
+    except Exception:
+        print("No XGBoost CUDA support. Training on CPU (multi-threaded).")
+
     tscv = TimeSeriesSplit(n_splits=5, gap=48)
 
     for horizon in ["3hr", "6hr", "12hr", "24hr"]:
@@ -149,12 +188,22 @@ def train_and_save() -> None:
         y = targets[horizon]
 
         params = {**BASE_PARAMS, **HORIZON_OVERRIDES[horizon]}
+        if gpu_available:
+            params["tree_method"] = "hist"
+            params["device"] = "cuda"
+            print("  [GPU] CUDA accelerated Hist algorithm on RTX 4050.")
+        else:
+            params["tree_method"] = "hist"
+            params["n_jobs"] = -1
+            print("  [CPU] Multi-threaded Hist algorithm.")
+
         model = xgb.XGBRegressor(**params)
 
         # Use last fold for final eval
         train_idx, val_idx = list(tscv.split(X))[-1]
         X_train, X_val = X[train_idx], X[val_idx]
         y_train, y_val = y[train_idx], y[val_idx]
+        print(f"  Training on {len(X_train):,} rows, validating on {len(X_val):,} rows.")
 
         model.fit(
             X_train, y_train,
@@ -173,15 +222,17 @@ def train_and_save() -> None:
         model.save_model(model_path)
         print(f"  Saved: {model_path}")
 
-        # Save SHAP explainer
+        # Save SHAP explainer (subsample reference to prevent OOM)
         try:
             import shap
-            explainer = shap.TreeExplainer(model)
+            ref_size = min(200, len(X_train))
+            ref_idx = np.random.choice(len(X_train), size=ref_size, replace=False)
+            explainer = shap.TreeExplainer(model, data=X_train[ref_idx])
             shap_path = str(MODEL_DIR / f"shap_xgb_{horizon}.pkl")
             joblib.dump(explainer, shap_path)
             print(f"  SHAP:  {shap_path}")
         except Exception as e:
-            print(f"  SHAP save failed: {e}")
+            print(f"  SHAP save skipped: {e}")
 
     print(f"\n{'=' * 70}")
     print("All XGBoost models trained and saved.")

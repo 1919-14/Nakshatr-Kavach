@@ -168,7 +168,8 @@ def _write_omni_readme() -> None:
         "Col 35: Proton density (cc)  ← PRIMARY\n"
         "Col 36: Temperature (K)  ← PRIMARY\n"
         "Fill values: 9999, 99999, 999999 etc.\n"
-        "\nSee: https://omniweb.gsfc.nasa.gov/html/omni_min_data.html\n"
+        "\nSee: https://omniweb.gsfc.nasa.gov/html/omni_min_data.html\n",
+        encoding="utf-8"
     )
 
 
@@ -385,11 +386,11 @@ def main() -> None:
 
     if run_all or args.kp_only:
         download_kp()
-        download_noaa_kp_archive()
+        # download_noaa_kp_archive()  # Deprecated/404 by NOAA; GFZ Potsdam is definitive ground truth
 
     if run_all or args.goes_only:
         goes_start = max(args.start_year, 2010)
-        download_goes_xray(goes_start, args.end_year)
+        # download_goes_xray(goes_start, args.end_year) # Deprecated/404 by NOAA NCEI; not required for ML feature matrix
 
     if run_all or args.donki_only:
         donki_start = max(args.start_year, 2010)

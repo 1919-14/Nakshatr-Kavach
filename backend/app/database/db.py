@@ -141,10 +141,12 @@ def init_db() -> None:
                 if non_comment:
                     try:
                         cur.execute(stmt)
-                    except pymysql.err.OperationalError as exc:
-                        # MySQL raises OperationalError for "Duplicate key name"
-                        # on CREATE INDEX IF NOT EXISTS — treat as harmless
-                        if "Duplicate key name" in str(exc):
+                    except pymysql.Error as exc:
+                        # MySQL raises error 1061 (Duplicate key name) or OperationalError
+                        # on CREATE INDEX when it already exists — treat as harmless
+                        if hasattr(exc, "args") and len(exc.args) > 0 and exc.args[0] in (1060, 1061):
+                            logger.debug("Index/table element already exists (skipped): %s", exc)
+                        elif "Duplicate key name" in str(exc):
                             logger.debug("Index already exists (skipped): %s", exc)
                         else:
                             raise

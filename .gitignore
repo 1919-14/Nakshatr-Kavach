@@ -25,7 +25,7 @@ backend/app/ml_models/*.joblib
 backend/app/ml_models/*.keras
 
 # ML Models
-*.pkl
+
 *.h5
 *.hdf5
 *.ckpt
