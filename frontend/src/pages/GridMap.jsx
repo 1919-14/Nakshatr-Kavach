@@ -1,28 +1,34 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStormStore } from "../store/useStormStore";
-import { MOCK_GRID_CORRIDORS } from "../mock/mockData";
 import { getRiskColor, getRiskBg } from "../utils/riskColorMapper";
 import { IndiaGridMap } from "../components/grid/IndiaGridMap";
 import { SectionLabel } from "../components/ui/index";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 export default function GridMap() {
-  const { gridCorridors, solarWind } = useStormStore();
-  const corridors = gridCorridors?.length ? gridCorridors : MOCK_GRID_CORRIDORS;
+  const { gridCorridors, solarWind, kpForecast } = useStormStore();
+  const corridors = gridCorridors?.length ? gridCorridors : [];
   const [selected, setSelected] = useState(null);
   const sel = corridors.find(c => c.id === selected);
-  const kp  = solarWind?.kp_current ?? 7.2;
-  const totalRisk   = Math.round(corridors.reduce((s,c)=>s+c.risk_percent,0)/corridors.length);
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h = asNum(kpForecast?.kp_3hr?.value);
+  const totalRisk   = corridors.length ? Math.round(corridors.reduce((s,c)=>s+c.risk_percent,0)/corridors.length) : 0;
   const totalImpact = corridors.reduce((s,c)=>s+c.impact_crore,0);
   const totalPop    = corridors.reduce((s,c)=>s+c.population_millions,0).toFixed(1);
+  const peakGic     = corridors.length ? Math.max(...corridors.map(c=>c.gic_amps)) : 0;
 
   return (
     <div style={{ minHeight:"100vh", background:"var(--color-bg-primary)",
-      paddingTop:74, display:"grid",
+      display:"grid",
       gridTemplateColumns:"1fr 320px",
       gridTemplateRows:"auto 1fr auto",
-      gap:10, padding:"10px 14px 14px",
+      gap:10, padding:"84px 14px 14px",
       fontFamily:"Space Grotesk,sans-serif", color:"#E8F4FD" }}>
 
       {/* ── Top stats bar (full width) ── */}
@@ -32,8 +38,9 @@ export default function GridMap() {
           ["CORRIDORS AT RISK", `${corridors.filter(c=>c.risk_percent>50).length} / ${corridors.length}`, "#FF8F00"],
           ["ECONOMIC EXPOSURE", `₹${totalImpact}Cr`,     "#FDD835"],
           ["POPULATION AT RISK",`${totalPop}M people`,   "#00D4FF"],
-          ["PEAK GIC",          `${Math.max(...corridors.map(c=>c.gic_amps))}A`, "#EF5350"],
-          ["Storm Kp",          kp.toFixed(1),            "#FFD700"],
+          ["PEAK GIC",          `${peakGic}A`, "#EF5350"],
+          ["Kp Current",        kpCurrent === null ? "--" : kpCurrent.toFixed(1), "#FFD700"],
+          ["Kp Forecast 3h",    kp3h === null ? "--" : kp3h.toFixed(1), "#00D4FF"],
         ].map(([l,v,c]) => (
           <motion.div key={l} initial={{opacity:0,y:-8}} animate={{opacity:1,y:0}}
             style={{ flex:1, minWidth:120, background:"var(--color-bg-card)",
@@ -90,6 +97,11 @@ export default function GridMap() {
             </motion.div>
           );
         })}
+        {!corridors.length && (
+          <div style={{ color:"#607D8B", fontSize:12, padding:"12px 4px" }}>
+            Waiting for live grid corridor risk data.
+          </div>
+        )}
       </div>
 
       {/* ── Detail / chart (right bottom) ── */}

@@ -97,11 +97,12 @@ class BaseConfig:
 
     # CORS
     CORS_ORIGINS: list = os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
     ).split(",")
 
     # SocketIO
-    SOCKETIO_ASYNC_MODE: str = os.getenv("SOCKETIO_ASYNC_MODE", "eventlet")
+    SOCKETIO_ASYNC_MODE: str = os.getenv("SOCKETIO_ASYNC_MODE", "threading")
     SOCKETIO_CORS_ALLOWED_ORIGINS: str = "*"
 
     # Logging
@@ -116,7 +117,7 @@ class BaseConfig:
 
     # Groq (Layer 6 — not used by Layer 1, stored for global config)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
     @classmethod
     def init_app(cls, app) -> None:

@@ -21,6 +21,51 @@ kp_bp = Blueprint("kp_forecast", __name__, url_prefix="/api/kp")
 _last_predict_time: float = 0.0
 
 
+def _shap_importance_fallback(horizon: str, model_loader: Any) -> Dict[str, Any] | None:
+    """Return real XGBoost feature-importance drivers when TreeSHAP is unavailable."""
+    model = model_loader.xgb_models.get(horizon)
+    importances = getattr(model, "feature_importances_", None)
+    if model is None or importances is None:
+        return None
+    try:
+        from app.services.feature_engineering import FEATURE_NAMES, get_latest_features
+        from app.services.kp_predictor import get_latest_kp_forecast
+        import numpy as np
+
+        features = get_latest_features() or {}
+        raw_values = features.get("xgb_vector_raw")
+        if raw_values is None:
+            raw_values = []
+        raw_values = np.asarray(raw_values, dtype=np.float64).reshape(-1)
+        items = []
+        for idx, (name, importance) in enumerate(zip(FEATURE_NAMES, importances)):
+            value = float(raw_values[idx]) if idx < len(raw_values) and np.isfinite(raw_values[idx]) else None
+            items.append({
+                "feature": name,
+                "shap_value": round(float(importance), 5),
+                "abs_shap": round(abs(float(importance)), 5),
+                "direction": "importance",
+                "impact": "MODEL_IMPORTANCE",
+                "value": value,
+                "physics_note": "XGBoost feature importance fallback; TreeSHAP explainer was not available.",
+            })
+        items.sort(key=lambda item: item["abs_shap"], reverse=True)
+        forecast = get_latest_kp_forecast()
+        return {
+            "method": "XGBoost feature importance fallback",
+            "source": "MODEL_IMPORTANCE_FALLBACK",
+            "horizon": horizon,
+            "predicted_kp": forecast.get("forecast", {}).get(horizon, {}).get("kp"),
+            "dominant_driver": items[0]["feature"] if items else "Unavailable",
+            "top_features": items[:15],
+            "all_features": items,
+            "warning": "TreeSHAP unavailable; showing real model feature importances instead of per-sample SHAP values.",
+        }
+    except Exception:
+        logger.debug("Could not build SHAP fallback", exc_info=True)
+        return None
+
+
 @kp_bp.route("/forecast", methods=["GET"])
 def get_forecast() -> Tuple[Response, int]:
     """
@@ -97,6 +142,9 @@ def get_shap() -> Tuple[Response, int]:
         cached = get_latest_kp_forecast()
         if cached.get("shap"):
             return jsonify(cached["shap"]), 200
+        fallback = _shap_importance_fallback(horizon, model_loader)
+        if fallback:
+            return jsonify(fallback), 200
         return jsonify({"error": f"SHAP explainer not loaded for {horizon}"}), 503
 
     try:

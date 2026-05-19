@@ -259,18 +259,19 @@ Full-screen storm detection overlay with GSAP animation sequence, progressive vi
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| React.js | 18+ | Core SPA framework |
-| Three.js + R3F | r155+ | 3D Earth globe + satellite orbits |
+| React.js | 18.3+ | Core SPA framework |
+| Three.js + R3F | 0.168+ | 3D Earth globe + satellite orbits |
 | @react-three/postprocessing | Latest | Bloom, chromatic aberration, vignette |
-| Recharts | 2+ | Kp forecast, solar wind charts |
-| react-leaflet | 4+ | India GIC risk map |
-| D3.js | 7+ | SHAP waterfall chart, arc diagrams |
+| Recharts | 2.12+ | Kp forecast, solar wind charts |
+| react-leaflet | 4.2+ | India GIC risk map |
+| satellite.js | 4.1+ | TLE orbital propagation for real satellite positions |
 | Framer Motion | 11+ | Panel transitions, alert animations |
-| GSAP | 3+ | Cinematic storm simulation sequences |
+| GSAP | 3.12+ | Cinematic storm simulation sequences |
 | Tailwind CSS | 3+ | Dark space-themed utility styling |
-| Zustand | 4+ | Global state management |
+| Zustand | 4.5+ | Global state management |
 | TanStack Query | 5+ | API polling, background refetch |
-| Socket.IO Client | 4+ | Real-time WebSocket data push |
+| Socket.IO Client | 4.7+ | Real-time WebSocket data push |
+| jsPDF + html2canvas | Latest | PDF advisory export |
 
 #### Backend
 
@@ -280,8 +281,7 @@ Full-screen storm detection overlay with GSAP animation sequence, progressive vi
 | Flask | 3.x | REST API server |
 | Flask-SocketIO | Latest | Real-time bidirectional push |
 | APScheduler | 3.x | Background data polling tasks |
-| SQLite / PostgreSQL | — | Historical data cache |
-| Celery + Redis | Latest | Async ML inference queue |
+| SQLite | — | Historical data cache + replay storage |
 | Gunicorn | Latest | Production WSGI server |
 
 #### Machine Learning & Space Science
@@ -542,22 +542,32 @@ npm run dev
 # Dashboard at http://localhost:5173
 ```
 
-### 5. Full Stack with Docker (Recommended)
+### 5. Quick Launch (Windows — Recommended)
 
 ```bash
-docker-compose up --build
-# Dashboard: http://localhost:3000
-# API:       http://localhost:5000
+.\run_nakshatra.bat
+# Starts backend + frontend, waits for health check,
+# and opens the dashboard at http://localhost:5173 automatically
 ```
 
-### 6. Train ML Models (Optional — checkpoints included)
+### 6. Manual Setup
 
+**Backend:**
 ```bash
-cd ml_training
-python 01_data_download.py       # Downloads ~500MB OMNI + Kp data
-python 03_train_xgboost.py       # ~5-10 min on CPU
-python 04_train_lstm.py          # ~30-60 min on CPU
-python 05_evaluate_models.py     # Validates on May 2024 G5 storm
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python run.py
+# Backend running at http://localhost:5000
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+# Dashboard at http://localhost:5173
 ```
 
 ---
@@ -573,8 +583,9 @@ python 05_evaluate_models.py     # Validates on May 2024 G5 storm
 | `GET` | `/api/grid/risk` | GIC risk per transmission corridor |
 | `GET` | `/api/advisory/latest` | Latest LLM-generated mission advisory |
 | `POST` | `/api/advisory/generate` | Trigger fresh advisory generation |
+| `POST` | `/api/advisory/chat/stream` | SSE stream: per-satellite AI explanation (EN/Hindi) |
+| `POST` | `/api/advisory/explain/shap` | LLM plain-language explanation of SHAP drivers |
 | `GET` | `/api/history/{storm_id}` | Storm data for replay |
-| `GET` | `/api/shap/explain` | SHAP feature importance for current prediction |
 | `WS` | `/realtime` | Continuous push of all data every 60 seconds |
 
 ### Example: `/api/kp/forecast`
@@ -616,16 +627,20 @@ python 05_evaluate_models.py     # Validates on May 2024 G5 storm
 ## 📈 Roadmap
 
 ```
-v1.0 — IIST Hackathon MVP  (May 16-17, 2026)
-├── [x] 8-layer intelligence pipeline
-├── [x] 3D Earth globe with satellite orbits
+v1.0 — IIST Hackathon MVP  (May 16-19, 2026)
+├── [x] 8-layer intelligence pipeline — ALL LAYERS COMPLETE
+├── [x] 3D Earth globe with satellite orbits (Three.js + satellite.js TLE)
 ├── [x] Live NOAA/NASA data integration
 ├── [x] XGBoost + LSTM hybrid Kp prediction
 ├── [x] 12 Tier-1 satellite risk scoring
-├── [x] India grid GIC risk map
-├── [x] LLM mission advisory (Groq)
-├── [x] Historical storm replay (4 storms)
-└── [x] Cinematic alert system
+├── [x] India grid GIC risk map (6 EHV corridors)
+├── [x] LLM mission advisory (Groq + LLaMA-4-Scout)
+├── [x] Per-satellite AI explanation streaming (EN + Hindi)
+├── [x] SHAP feature driver panel with LLM operator explanation
+├── [x] Historical storm replay (4 storms: 1989/2003/2022/2024)
+├── [x] Cinematic alert system (G1-G5 viewport glow)
+├── [x] One-click launcher (run_nakshatra.bat)
+└── [x] PDF advisory export
 
 v1.5 — SIH 2026 Submission  (Q3 2026)
 ├── [ ] Full 53 named ISRO satellite profiles

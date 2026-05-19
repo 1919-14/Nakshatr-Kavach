@@ -130,7 +130,8 @@ html, body, #root {
   0%   { transform: translateX(100vw); }
   100% { transform: translateX(-100%); }
 }
-.marquee-inner { animation: marqueeScroll 28s linear infinite; white-space: nowrap; }
+.marquee-inner { animation: marqueeScroll 85s linear infinite; white-space: nowrap; }
+.marquee-inner:hover { animation-play-state: paused; }
 
 /* Orbit draw-in animation */
 @keyframes drawOrbit {

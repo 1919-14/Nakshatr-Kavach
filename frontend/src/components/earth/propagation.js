@@ -64,7 +64,7 @@ export function getLatLon(satrec, date) {
     return {
       lat: satellite.degreesLat(geo.latitude),
       lon: satellite.degreesLong(geo.longitude),
-      alt: geo.height * EARTH_R_KM,  // convert back to km
+      alt: geo.height,
     };
   } catch (e) {
     return { lat: 0, lon: 0, alt: 0 };

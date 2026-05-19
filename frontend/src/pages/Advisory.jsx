@@ -1,38 +1,80 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
+import axios from "axios";
 import { useStormStore } from "../store/useStormStore";
-import { MOCK_ADVISORY, MOCK_SATELLITES } from "../mock/mockData";
 import { getStormClass } from "../utils/stormClassifier";
 import { getRiskColor } from "../utils/riskColorMapper";
 import { formatIST } from "../utils/timeFormatter";
 import { SectionLabel, RiskLevelBadge } from "../components/ui/index";
+import { normalizeAdvisory } from "../utils/apiNormalize";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 export default function Advisory() {
-  const { advisory, solarWind, satellites } = useStormStore();
-  const data     = advisory || MOCK_ADVISORY;
-  const satList  = satellites?.length ? satellites : MOCK_SATELLITES;
-  const kp       = solarWind?.kp_current ?? 7.2;
-  const sc       = getStormClass(kp);
+  const { advisory, solarWind, satellites, kpForecast, setAdvisory } = useStormStore();
+  const data     = advisory;
+  const satList  = satellites?.length ? satellites : [];
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h      = asNum(kpForecast?.kp_3hr?.value);
+  const sc       = getStormClass(kpCurrent ?? kp3h ?? 0);
   const [hindi, setHindi] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const handleExport = async () => {
     setExporting(true);
     try {
-      const { default: jsPDF }       = await import("jspdf");
-      const { default: html2canvas } = await import("html2canvas");
-      const el     = document.getElementById("advisory-export");
-      const canvas = await html2canvas(el, { backgroundColor:"#020817", scale:2 });
-      const pdf    = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
-      const imgW   = 190;
-      const imgH   = (canvas.height * imgW) / canvas.width;
-      pdf.setFillColor(2, 8, 23);
-      pdf.rect(0, 0, 210, 297, "F");
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 10, 10, imgW, imgH);
-      pdf.save(`nakshatra-kavach-advisory-${Date.now()}.pdf`);
+      const response = await axios.get(`${API_BASE}/api/advisory/export/pdf`, { responseType: "blob", timeout: 60000 });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `nakshatra-kavach-advisory-${Date.now()}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
     } catch(e) { console.error(e); }
     setExporting(false);
   };
+
+  const handleSMS = async () => {
+    const { data: payload } = await axios.get(`${API_BASE}/api/advisory/export/sms`, { timeout: 30000 });
+    await navigator.clipboard?.writeText(payload.sms_text || "");
+    alert("SMS alert copied for SMSGate demo sending.");
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const { data: generated } = await axios.post(
+        `${API_BASE}/api/advisory/generate`,
+        { trigger_type: "MANUAL_REFRESH", force: true },
+        { timeout: 120000 }
+      );
+      setAdvisory(normalizeAdvisory(generated));
+    } catch (error) {
+      console.error(error);
+      const retryAfter = error.response?.headers?.["retry-after"] || error.response?.data?.retry_after_seconds;
+      const detail = error.response?.data?.error || error.message;
+      alert(retryAfter ? `Advisory refresh is rate limited. Retry in ${retryAfter}s.` : `Groq advisory generation failed: ${detail}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  if (!data) {
+    return (
+      <div style={{ minHeight:"100vh", background:"var(--color-bg-primary)", padding:"92px 24px 32px", color:"#E8F4FD" }}>
+        <div style={{ maxWidth:900, margin:"0 auto", background:"var(--color-bg-card)", border:"1px solid rgba(0,212,255,0.12)", borderRadius:12, padding:20 }}>
+          <SectionLabel>Full Advisory Report</SectionLabel>
+          <div style={{ marginTop:10, color:"#607D8B", fontSize:13 }}>Waiting for live advisory generation from the backend.</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight:"100vh", background:"var(--color-bg-primary)",
@@ -59,10 +101,10 @@ export default function Advisory() {
             <div style={{ textAlign:"right" }}>
               <div style={{ fontFamily:"Orbitron,sans-serif", fontSize:32,
                 fontWeight:900, color:sc.color, textShadow:`0 0 20px ${sc.color}` }}>
-                Kp {kp.toFixed(1)}
+                Kp {kpCurrent === null ? "--" : kpCurrent.toFixed(1)}
               </div>
               <div style={{ fontSize:11, color:sc.color, fontFamily:"Orbitron,sans-serif" }}>
-                {sc.label}
+                {sc.label} · +3h {kp3h === null ? "--" : kp3h.toFixed(1)}
               </div>
             </div>
           </div>
@@ -72,7 +114,8 @@ export default function Advisory() {
         <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
           {[
             { icon:"📋", label: exporting?"Exporting...":"Export PDF", onClick: handleExport },
-            { icon:"📱", label:"WhatsApp Summary", onClick:()=>{} },
+            { icon:"SMS", label:"SMS Summary", onClick:handleSMS },
+            { icon:"AI", label: generating?"Generating...":"Groq Report", onClick:handleGenerate },
             { icon:"📧", label:"Email Alert",      onClick:()=>{} },
           ].map(btn => (
             <motion.button key={btn.label} onClick={btn.onClick}
@@ -107,7 +150,7 @@ export default function Advisory() {
                       <RiskLevelBadge score={s.composite_risk} />
                     </div>
                     <div style={{ fontSize:11, color:"#546E7A", marginBottom:4 }}>
-                      {s.type} · {s.altitude?.toLocaleString()} km
+                      {s.type} - {s.altitude ? `${s.altitude.toLocaleString()} km` : "Catalog"}
                     </div>
                     <div style={{ fontSize:11, color:"#90A4AE", lineHeight:1.5 }}>
                       {s.action?.split(".")[0]}

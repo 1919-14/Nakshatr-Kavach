@@ -1,11 +1,10 @@
-import React, { memo, useState } from "react";
+import React, { memo } from "react";
 import { motion } from "framer-motion";
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   ReferenceLine, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts";
 import { useStormStore } from "../../store/useStormStore";
-import { MOCK_KP_CHART_DATA } from "../../mock/mockData";
 import { getStormClass } from "../../utils/stormClassifier";
 import { SectionLabel } from "../ui/index";
 
@@ -49,7 +48,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 // ── Kp Forecast Chart ─────────────────────────────────────────────────────────
 export const KpForecastChart = memo(() => {
   const { kpChartData } = useStormStore();
-  const data = kpChartData?.length ? kpChartData : MOCK_KP_CHART_DATA;
+  const data = kpChartData?.length ? kpChartData : [];
 
   const THRESHOLDS = [
     { kp: 5, color: "#4CAF50", label: "G1" },
@@ -83,6 +82,7 @@ export const KpForecastChart = memo(() => {
       </div>
 
       <div style={{ flex: 1 }}>
+        {data.length ? (
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 20, bottom: 4, left: 0 }}>
             <CartesianGrid
@@ -187,6 +187,21 @@ export const KpForecastChart = memo(() => {
             ))}
           </ComposedChart>
         </ResponsiveContainer>
+        ) : (
+          <div style={{
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#607D8B",
+            fontSize: 12,
+            fontFamily: "JetBrains Mono, monospace",
+            border: "1px dashed rgba(0,212,255,0.16)",
+            borderRadius: 8,
+          }}>
+            Waiting for live backend Kp forecast
+          </div>
+        )}
       </div>
     </div>
   );

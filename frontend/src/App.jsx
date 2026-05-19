@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { NavBar } from "./components/layout/NavBar";
 import { AlertBar, EdgeGlow, StormAlertOverlay } from "./components/alerts/index";
+import { ContextChatbot } from "./components/chat/ContextChatbot";
 import { useStormStore } from "./store/useStormStore";
 import { useSolarData, useKpForecast, useSatelliteRisk, useGridRisk, useAdvisory, useSocket, useShapExplain } from "./hooks/index";
 import { PageSkeleton } from "./components/ui/index";
@@ -33,10 +34,11 @@ function DataBootstrap() {
   useAdvisory();
   useShapExplain();
   useSocket();
-  const { solarWind, showAlertOverlay, alertDismissed } = useStormStore();
+  const { solarWind, kpForecast, showAlertOverlay, alertDismissed } = useStormStore();
   useEffect(() => {
-    if (solarWind?.kp_current >= 7 && !alertDismissed) showAlertOverlay();
-  }, [solarWind?.kp_current, solarWind?.storm_class, alertDismissed, showAlertOverlay]);
+    const kp = Number(solarWind?.kp_current ?? kpForecast?.current_kp ?? kpForecast?.kp_3hr?.value ?? 0);
+    if (kp >= 7 && !alertDismissed) showAlertOverlay();
+  }, [solarWind?.kp_current, solarWind?.storm_class, kpForecast?.current_kp, kpForecast?.kp_3hr?.value, alertDismissed, showAlertOverlay]);
   return null;
 }
 
@@ -74,6 +76,7 @@ export default function App() {
         <EdgeGlow />
         <StormAlertOverlay />
         <AnimatedRoutes />
+        <ContextChatbot />
       </BrowserRouter>
     </QueryClientProvider>
   );

@@ -197,3 +197,129 @@ CREATE TABLE IF NOT EXISTS satellite_events (
 CREATE INDEX idx_sat_events_name
     ON satellite_events(satellite_name(64), event_timestamp_utc(32) DESC);
 
+-- =============================================================================
+-- LAYER 5: India Power Grid GIC Risk Engine
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS grid_risk_history (
+    id                          INT AUTO_INCREMENT PRIMARY KEY,
+    computed_at_utc             VARCHAR(32) NOT NULL,
+    corridor_id                 VARCHAR(64) NOT NULL,
+    corridor_name               VARCHAR(255) NOT NULL,
+    kp_used                     DOUBLE,
+    e_geo_mV_per_km             DOUBLE,
+    gic_amps                    DOUBLE,
+    saturation_level            VARCHAR(16),
+    saturation_risk             DOUBLE,
+    risk_level                  VARCHAR(16),
+    load_reduction_percent      INT,
+    economic_impact_crore       DOUBLE,
+    transformer_damage_prob     DOUBLE,
+    created_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_grid_risk_corridor_time
+    ON grid_risk_history(corridor_id, computed_at_utc DESC);
+CREATE INDEX idx_grid_risk_level
+    ON grid_risk_history(risk_level, computed_at_utc DESC);
+
+CREATE TABLE IF NOT EXISTS grid_events (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    event_timestamp_utc     VARCHAR(32) NOT NULL,
+    corridor_id             VARCHAR(64) NOT NULL,
+    corridor_name           VARCHAR(255) NOT NULL,
+    event_type              VARCHAR(32) NOT NULL,
+    previous_risk_level     VARCHAR(16),
+    new_risk_level          VARCHAR(16),
+    gic_amps_at_event       DOUBLE,
+    kp_at_event             DOUBLE,
+    event_description       TEXT,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_grid_events_corridor_time
+    ON grid_events(corridor_id, event_timestamp_utc DESC);
+CREATE INDEX idx_grid_events_type
+    ON grid_events(event_type, event_timestamp_utc DESC);
+
+-- =============================================================================
+-- LAYER 6: Mission Control Advisory Generator
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS advisory_history (
+    id                          INT AUTO_INCREMENT PRIMARY KEY,
+    advisory_id                 VARCHAR(64) UNIQUE NOT NULL,
+    generated_at_utc            VARCHAR(32) NOT NULL,
+    advisory_source             VARCHAR(32) NOT NULL,
+    trigger_type                VARCHAR(32) NOT NULL,
+    advisory_urgency            VARCHAR(16) NOT NULL,
+    storm_class                 VARCHAR(8),
+    kp_at_generation            DOUBLE,
+    satellites_critical         INT,
+    satellites_high             INT,
+    corridors_critical          INT,
+    corridors_high              INT,
+    advisory_title              VARCHAR(255),
+    priority_action             TEXT,
+    groq_tokens_used            INT,
+    groq_elapsed_ms             DOUBLE,
+    rule_based                  TINYINT(1) DEFAULT 0,
+    full_advisory_json          LONGTEXT NOT NULL,
+    created_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_advisory_time ON advisory_history(generated_at_utc DESC);
+CREATE INDEX idx_advisory_type ON advisory_history(trigger_type);
+CREATE INDEX idx_advisory_class ON advisory_history(storm_class);
+
+CREATE TABLE IF NOT EXISTS advisory_trigger_log (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    logged_at_utc           VARCHAR(32) NOT NULL,
+    trigger_type            VARCHAR(32) NOT NULL,
+    trigger_condition       TEXT NOT NULL,
+    previous_value          TEXT,
+    new_value               TEXT,
+    advisory_generated      TINYINT(1) DEFAULT 0,
+    suppression_reason      TEXT,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_adv_trigger_time ON advisory_trigger_log(logged_at_utc DESC);
+CREATE INDEX idx_adv_trigger_type ON advisory_trigger_log(trigger_type);
+
+-- =============================================================================
+-- LAYER 7: Historical Storm Replay Engine
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS replay_sessions (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    session_id              VARCHAR(128) UNIQUE NOT NULL,
+    storm_id                VARCHAR(64) NOT NULL,
+    storm_name              VARCHAR(255) NOT NULL,
+    started_at_utc          VARCHAR(32) NOT NULL,
+    ended_at_utc            VARCHAR(32),
+    speed_used              INT,
+    frames_played           INT DEFAULT 0,
+    completed               TINYINT(1) DEFAULT 0,
+    aborted                 TINYINT(1) DEFAULT 0,
+    user_agent              TEXT,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_replay_sessions_storm_time
+    ON replay_sessions(storm_id, started_at_utc DESC);
+
+CREATE TABLE IF NOT EXISTS validation_results (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    storm_id                VARCHAR(64) NOT NULL,
+    computed_at_utc         VARCHAR(32) NOT NULL,
+    total_samples           INT,
+    rmse_3hr                DOUBLE,
+    mae_3hr                 DOUBLE,
+    class_accuracy          DOUBLE,
+    full_result_json        LONGTEXT,
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_validation_storm
+    ON validation_results(storm_id, computed_at_utc DESC);

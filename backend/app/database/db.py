@@ -194,9 +194,13 @@ def cleanup_old_data() -> Dict[str, int]:
     """
     from app.utils.constants import (
         RETENTION_CME_EVENTS_DAYS,
+        RETENTION_GRID_EVENTS_DAYS,
+        RETENTION_GRID_RISK_DAYS,
         RETENTION_INGESTION_LOG_DAYS,
         RETENTION_NOAA_ALERTS_DAYS,
         RETENTION_SOLAR_WIND_DAYS,
+        RETENTION_ADVISORY_HISTORY_DAYS,
+        RETENTION_ADVISORY_TRIGGER_LOG_DAYS,
     )
 
     now_utc = datetime.utcnow()
@@ -207,6 +211,10 @@ def cleanup_old_data() -> Dict[str, int]:
         ("cme_events",          "created_at",    RETENTION_CME_EVENTS_DAYS),
         ("noaa_alerts",         "created_at",    RETENTION_NOAA_ALERTS_DAYS),
         ("ingestion_log",       "created_at",    RETENTION_INGESTION_LOG_DAYS),
+        ("grid_risk_history",   "created_at",    RETENTION_GRID_RISK_DAYS),
+        ("grid_events",         "created_at",    RETENTION_GRID_EVENTS_DAYS),
+        ("advisory_history",    "created_at",    RETENTION_ADVISORY_HISTORY_DAYS),
+        ("advisory_trigger_log","created_at",    RETENTION_ADVISORY_TRIGGER_LOG_DAYS),
     ]
 
     with get_db() as conn:

@@ -4,7 +4,7 @@ import {
   MOCK_SATELLITES, MOCK_GRID_CORRIDORS, MOCK_ADVISORY,
 } from "../mock/mockData";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === "true";
 
 export const useStormStore = create((set, get) => ({
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -27,6 +27,12 @@ export const useStormStore = create((set, get) => ({
   selectedSatellite:     null,
   alertOverlayVisible:   false,
   alertDismissed:        false,
+  replayMode:            false,
+  replayState:           "IDLE",
+  replayProgress:        0,
+  replayCurrentFrame:    0,
+  replayTotalFrames:     0,
+  replayStormName:       null,
   isReplayMode:          false,
   replayStormId:         null,
   replayFrameIndex:      0,
@@ -51,7 +57,7 @@ export const useStormStore = create((set, get) => ({
   setGridCorridors: (d)  => set({ gridCorridors: d }),
   setAdvisory:      (d)  => set({ advisory: d }),
   setShapExplain:   (d)  => set({ shapExplain: d }),
-  setSystemStatus:  (d)  => set({ systemStatus: d }),
+  setSystemStatus:  (d)  => set(state => ({ systemStatus: typeof d === "function" ? d(state.systemStatus) : d })),
 
   selectSatellite:  (id) => set({ selectedSatellite: id }),
   clearSatellite:   ()   => set({ selectedSatellite: null }),
@@ -59,9 +65,51 @@ export const useStormStore = create((set, get) => ({
   showAlertOverlay: ()   => set({ alertOverlayVisible: true,  alertDismissed: false }),
   hideAlertOverlay: ()   => set({ alertOverlayVisible: false, alertDismissed: true  }),
 
-  setReplayMode:    (v)  => set({ isReplayMode: v }),
-  setReplayStorm:   (id) => set({ replayStormId: id, replayFrameIndex: 0 }),
-  setReplayFrame:   (i)  => set({ replayFrameIndex: i }),
+  setReplayMode:    (v)  => set({ replayMode: Boolean(v), isReplayMode: Boolean(v) }),
+  setReplayStorm:   (id) => set({
+    replayStormId: id,
+    replayFrameIndex: 0,
+    replayCurrentFrame: 0,
+    replayProgress: 0,
+  }),
+  setReplayStatus:  (status = {}) => set((state) => {
+    const nextState = status.state ?? status.new_state ?? state.replayState;
+    const currentFrame =
+      status.current_frame ?? status.frame ?? status.frame_index ?? state.replayCurrentFrame;
+    const totalFrames = status.total_frames ?? status.total ?? state.replayTotalFrames;
+    const progress = status.progress_pct ??
+      (totalFrames ? Math.round((currentFrame / totalFrames) * 1000) / 10 : state.replayProgress);
+    const active = nextState && nextState !== "IDLE";
+    return {
+      replayMode: Boolean(active),
+      isReplayMode: Boolean(active),
+      replayState: nextState,
+      replaySpeed: status.speed ?? state.replaySpeed,
+      replayProgress: progress,
+      replayCurrentFrame: currentFrame,
+      replayFrameIndex: currentFrame,
+      replayTotalFrames: totalFrames,
+      replayStormName: status.storm_name ?? status.replayStormName ?? state.replayStormName,
+      replayPlaying: nextState === "PLAYING" ? true : nextState === "PAUSED" || nextState === "IDLE" ? false : state.replayPlaying,
+    };
+  }),
+  setReplayFrame:   (frame)  => set((state) => {
+    if (typeof frame === "number") {
+      return { replayFrameIndex: frame, replayCurrentFrame: frame };
+    }
+    const frameIndex = frame?.frame_index ?? state.replayCurrentFrame;
+    const totalFrames = frame?.total_frames ?? state.replayTotalFrames;
+    return {
+      replayMode: Boolean(frame?.is_historical ?? true),
+      isReplayMode: Boolean(frame?.is_historical ?? true),
+      replayState: frame?.state ?? state.replayState,
+      replayProgress: frame?.progress_pct ?? state.replayProgress,
+      replayCurrentFrame: frameIndex,
+      replayFrameIndex: frameIndex,
+      replayTotalFrames: totalFrames,
+      replaySpeed: frame?.speed ?? state.replaySpeed,
+    };
+  }),
   setReplayPlaying: (v)  => set({ replayPlaying: v }),
   setReplaySpeed:   (v)  => set({ replaySpeed: v }),
 

@@ -111,13 +111,21 @@ const MetricCard = memo(({ label, value, unit, color, sparkData, warning }) => {
 
 // ── Solar Telemetry Strip ─────────────────────────────────────────────────────
 export const SolarTelemetryStrip = memo(() => {
-  const { solarWind } = useStormStore();
+  const { solarWind, kpForecast } = useStormStore();
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h = asNum(kpForecast?.kp_3hr?.value);
   const [sparks, setSparks] = useState({
-    bz:      generateSparkline(-18, 3),
-    bt:      generateSparkline(28, 2),
-    speed:   generateSparkline(720, 25),
-    density: generateSparkline(12, 1.2),
-    kp:      generateSparkline(7.2, 0.3),
+    bz:      generateSparkline(0, 0),
+    bt:      generateSparkline(0, 0),
+    speed:   generateSparkline(0, 0),
+    density: generateSparkline(0, 0),
+    kpCurrent: generateSparkline(0, 0),
+    kp3h:       generateSparkline(0, 0),
   });
 
   // Update sparklines with new value every 3s
@@ -130,19 +138,19 @@ export const SolarTelemetryStrip = memo(() => {
           bt:      push(prev.bt,      solarWind?.bt_total       ?? prev.bt[prev.bt.length-1]),
           speed:   push(prev.speed,   solarWind?.sw_speed       ?? prev.speed[prev.speed.length-1]),
           density: push(prev.density, solarWind?.proton_density ?? prev.density[prev.density.length-1]),
-          kp:      push(prev.kp,      solarWind?.kp_current     ?? prev.kp[prev.kp.length-1]),
+          kpCurrent: push(prev.kpCurrent, kpCurrent ?? prev.kpCurrent[prev.kpCurrent.length-1]),
+          kp3h:      push(prev.kp3h,      kp3h      ?? prev.kp3h[prev.kp3h.length-1]),
         };
       });
     }, 3000);
     return () => clearInterval(t);
-  }, [solarWind]);
+  }, [solarWind, kpCurrent, kp3h]);
 
-  const bz      = solarWind?.bz_gsm        ?? -18.4;
-  const bt      = solarWind?.bt_total      ?? 28.7;
-  const speed   = solarWind?.sw_speed      ?? 720;
-  const density = solarWind?.proton_density?? 12.3;
-  const kp      = solarWind?.kp_current    ?? 7.2;
-  const xray    = solarWind?.xray_class    ?? "M1.5";
+  const bz      = solarWind?.bz_gsm        ?? 0;
+  const bt      = solarWind?.bt_total      ?? 0;
+  const speed   = solarWind?.sw_speed      ?? 0;
+  const density = solarWind?.proton_density?? 0;
+  const xray    = solarWind?.xray_class    ?? "-";
 
   const metrics = [
     {
@@ -172,25 +180,33 @@ export const SolarTelemetryStrip = memo(() => {
     {
       label:     "Density",
       value:     density,
-      unit:      "p/cm³",
+      unit:      "p/cm3",
       color:     density > 15 ? "#FF9800" : "#AB47BC",
       sparkData: sparks.density,
       warning:   density > 20,
     },
     {
-      label:     "Kp Index",
-      value:     kp,
+      label:     "Kp Current",
+      value:     kpCurrent === null ? "--" : kpCurrent,
       unit:      "",
-      color:     getKpColor(kp),
-      sparkData: sparks.kp,
-      warning:   kp >= 7,
+      color:     kpCurrent === null ? "#607D8B" : getKpColor(kpCurrent),
+      sparkData: sparks.kpCurrent,
+      warning:   kpCurrent !== null && kpCurrent >= 7,
+    },
+    {
+      label:     "Kp Forecast 3h",
+      value:     kp3h === null ? "--" : kp3h,
+      unit:      "",
+      color:     kp3h === null ? "#607D8B" : getKpColor(kp3h),
+      sparkData: sparks.kp3h,
+      warning:   kp3h !== null && kp3h >= 7,
     },
     {
       label:     "X-Ray Class",
       value:     xray,
       unit:      "",
       color:     getXRayColor(xray),
-      sparkData: sparks.kp.map(v => v * 0.8),
+      sparkData: sparks.kp3h.map(v => v * 0.8),
       warning:   xray?.startsWith("X"),
     },
   ];

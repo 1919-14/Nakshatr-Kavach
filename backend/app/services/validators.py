@@ -329,6 +329,9 @@ def validate_solar_wind(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── Source flags ──
     out["source_dscovr_active"] = 1 if raw.get("active", True) else 0
+    out["source"] = raw.get("source", "NOAA_RTSW")
+    out["wind_time_tag"] = raw.get("_wind_time_tag")
+    out["mag_time_tag"] = raw.get("_mag_time_tag")
 
     # ── Computed fields ──
     out["transit_warning_minutes"] = compute_transit_warning_minutes(out.get("sw_speed_kmps"))

@@ -71,6 +71,12 @@ def create_app(config_object=None) -> Flask:
     app.register_blueprint(kp_bp)
     from app.routes.satellites import satellites_bp
     app.register_blueprint(satellites_bp)
+    from app.routes.grid import grid_bp
+    app.register_blueprint(grid_bp)
+    from app.routes.advisory import advisory_bp
+    app.register_blueprint(advisory_bp)
+    from app.routes.replay import replay_bp
+    app.register_blueprint(replay_bp)
 
     # ── Load Layer 2 Scalers ───────────────────────────────────────
     try:
@@ -92,6 +98,13 @@ def create_app(config_object=None) -> Flask:
         sat_db.load()
     except Exception as exc:
         logger.warning("Layer 4 satellite DB loading failed: %s", exc)
+
+    # ── Load Layer 5 India grid corridor database ───────────────────────────
+    try:
+        from app.services.grid_risk_engine import grid_db
+        grid_db.load()
+    except Exception as exc:
+        logger.warning("Layer 5 grid DB loading failed: %s", exc)
 
     # ── Start background scheduler ───────────────────────────────
     # Guard: only start in non-testing environments

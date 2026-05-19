@@ -25,6 +25,17 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+# SHAP 0.45 can still touch NumPy's removed np.obj2sctype on NumPy 2.x.
+# Keep the compatibility shim local to model loading so TreeSHAP can initialize.
+if not hasattr(np, "obj2sctype"):
+    def _obj2sctype(obj: Any, default: Any = None) -> Any:
+        try:
+            return np.dtype(obj).type
+        except Exception:
+            return default
+
+    np.obj2sctype = _obj2sctype  # type: ignore[attr-defined]
+
 from app.services.kp_utils import (
     ShapAnalyzer,
     classify_kp_to_storm,
@@ -203,11 +214,9 @@ class ModelLoader:
     def _load_lstm_model(self) -> bool:
         # Support both PyTorch (.pt) and Keras (.keras) model files
         pt_path = str(LSTM_MODEL_PATH).replace(".keras", ".pt")
-        load_path = pt_path if os.path.exists(pt_path) else LSTM_MODEL_PATH
-        if not os.path.exists(load_path):
-            logger.warning("LSTM model not found: %s", load_path)
-        try:
-            if str(load_path).endswith(".pt"):
+        enable_torch_lstm = os.getenv("NAKSHATRA_ENABLE_TORCH_LSTM", "0").strip().lower() in {"1", "true", "yes"}
+        if os.path.exists(pt_path) and enable_torch_lstm:
+            try:
                 import torch, importlib, sys
                 from pathlib import Path
                 root_dir = str(Path(__file__).resolve().parents[3])
@@ -215,7 +224,7 @@ class ModelLoader:
                     sys.path.insert(0, root_dir)
                 _lstm_mod = importlib.import_module("ml_training.04_train_lstm")
                 NakshatraLSTM = _lstm_mod.NakshatraLSTM
-                ckpt = torch.load(load_path, map_location="cpu", weights_only=False)
+                ckpt = torch.load(pt_path, map_location="cpu", weights_only=False)
                 n_features = ckpt.get("n_features", 72)
                 seq_len    = ckpt.get("seq_len", 24)
                 model = NakshatraLSTM(n_features=n_features, seq_len=seq_len)
@@ -225,11 +234,22 @@ class ModelLoader:
                 self._lstm_backend = "pytorch"
                 self._lstm_n_features = n_features
                 self._lstm_seq_len = seq_len
-                logger.info("PyTorch LSTM loaded from %s (features=%d)", load_path, n_features)
-            else:
+                logger.info("PyTorch LSTM loaded from %s (features=%d)", pt_path, n_features)
+                return True
+            except ImportError as exc:
+                logger.info("PyTorch is not installed; skipping optional .pt LSTM branch: %s", exc)
+            except Exception as exc:
+                logger.warning("PyTorch LSTM load failed: %s", exc)
+        elif os.path.exists(pt_path):
+            logger.info(
+                "PyTorch LSTM checkpoint present but disabled. Set NAKSHATRA_ENABLE_TORCH_LSTM=1 to enable it."
+            )
+
+        if os.path.exists(LSTM_MODEL_PATH):
+            try:
                 import tensorflow as tf
                 self.lstm_model = tf.keras.models.load_model(
-                    load_path,
+                    LSTM_MODEL_PATH,
                     custom_objects={"storm_weighted_huber": storm_weighted_huber},
                 )
                 self._lstm_backend = "tensorflow"
@@ -237,11 +257,13 @@ class ModelLoader:
                 self._lstm_seq_len = 24
                 dummy = np.zeros((1, 24, self._lstm_n_features), dtype=np.float32)
                 _ = self.lstm_model(dummy, training=True)
-                logger.info("TF LSTM loaded from %s", load_path)
-            return True
-        except Exception as e:
-            logger.warning("LSTM load failed: %s", e)
-            return False
+                logger.info("TF LSTM loaded from %s", LSTM_MODEL_PATH)
+                return True
+            except Exception as exc:
+                logger.warning("TensorFlow LSTM load failed: %s", exc)
+
+        logger.warning("LSTM model not loaded; optional ensemble branch disabled")
+        return False
 
     def _load_shap_explainers(self, joblib: Any) -> None:
         try:
@@ -384,6 +406,8 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
         "model_info": {
             "xgb_versions": {h: "v1.0" for h in ["3hr", "6hr", "12hr", "24hr"]},
             "lstm_version": "v1.0",
+            "lstm_loaded": model_loader.lstm_model is not None,
+            "lstm_backend": getattr(model_loader, "_lstm_backend", None) if model_loader.lstm_model is not None else "synthetic_fallback",
             "n_mc_samples": N_MC_SAMPLES,
             "fusion_weights": XGB_LSTM_WEIGHTS,
             "degraded_mode": model_loader.degraded_mode,

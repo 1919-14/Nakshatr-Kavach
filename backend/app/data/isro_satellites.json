@@ -112,7 +112,7 @@
       "safe_mode_action": "Reduce payload power, switch to safe attitude",
       "warning_action": "Elevate monitoring, prepare storm protocol",
       "critical_action": "Full safe mode, suspend all payload operations",
-      "tlenorad_id": "59066",
+      "tlenorad_id": "58990",
       "color_hex": "#FF9800",
       "orbit_radius_earth_units": 6.6,
       "dashboard_priority": 3,
@@ -190,7 +190,7 @@
       "safe_mode_action": "Classified protocol \u2014 alert IAF communications backup",
       "warning_action": "Alert IAF backup systems, reduce non-essential transmissions",
       "critical_action": "Initiate classified safe mode, activate backup communication links",
-      "tlenorad_id": "43940",
+      "tlenorad_id": "43864",
       "color_hex": "#0D47A1",
       "orbit_radius_earth_units": 6.6,
       "dashboard_priority": 5,
@@ -229,7 +229,7 @@
       "safe_mode_action": "Reduce Ka/Ku band power, switch to safe attitude",
       "warning_action": "Alert BharatNet ground stations, prepare traffic re-routing",
       "critical_action": "Immediate safe mode, suspend high-power transponders",
-      "tlenorad_id": "43823",
+      "tlenorad_id": "43824",
       "color_hex": "#4CAF50",
       "orbit_radius_earth_units": 6.6,
       "dashboard_priority": 6,
@@ -391,7 +391,7 @@
       "safe_mode_action": "Suspend SAR payload, orient for minimum drag",
       "warning_action": "Reduce imaging schedule, monitor orbit parameters",
       "critical_action": "Full safe mode, suspend all payload operations",
-      "tlenorad_id": "51858",
+      "tlenorad_id": "51656",
       "color_hex": "#009688",
       "orbit_radius_earth_units": 1.08,
       "dashboard_priority": 10,
@@ -471,7 +471,7 @@
       "warning_action": "Prepare enhanced observation mode, increase data downlink allocation",
       "critical_action": "Switch all instruments to storm observation mode \u2014 this is a PRIMARY SCIENCE TARGET during storm",
       "special_action": "Switch VELC (Visible Emission Line Coronagraph) to high-cadence mode. Increase PAPA (Particle Analyzer) sampling rate to maximum. Ensure SUIT (Solar Ultraviolet Imaging Telescope) is in storm observation mode. This storm is a primary science target \u2014 maximize data collection.",
-      "tlenorad_id": "57657",
+      "tlenorad_id": null,
       "color_hex": "#FF5722",
       "orbit_radius_earth_units": 236.0,
       "dashboard_priority": 12,
@@ -1599,14 +1599,94 @@
     {
       "name": "PSLV-C58-POEM3",
       "tier": 3
+    },
+    {
+      "name": "POEM-4",
+      "tier": 3
+    },
+    {
+      "name": "POEM-5",
+      "tier": 3
+    },
+    {
+      "name": "EOS-09",
+      "tier": 3
+    },
+    {
+      "name": "EOS-10",
+      "tier": 3
+    },
+    {
+      "name": "NISAR-ISRO",
+      "tier": 3
+    },
+    {
+      "name": "Oceansat-2",
+      "tier": 3
+    },
+    {
+      "name": "Resourcesat-2B",
+      "tier": 3
+    },
+    {
+      "name": "Cartosat-2S",
+      "tier": 3
+    },
+    {
+      "name": "RISAT-2",
+      "tier": 3
+    },
+    {
+      "name": "RISAT-2BR1",
+      "tier": 3
+    },
+    {
+      "name": "RISAT-2BR2",
+      "tier": 3
+    },
+    {
+      "name": "GSAT-24",
+      "tier": 3
+    },
+    {
+      "name": "GSAT-20",
+      "tier": 3
+    },
+    {
+      "name": "CMS-01",
+      "tier": 3
+    },
+    {
+      "name": "INSAT-4G",
+      "tier": 3
+    },
+    {
+      "name": "GSAT-10",
+      "tier": 3
+    },
+    {
+      "name": "GSAT-14",
+      "tier": 3
+    },
+    {
+      "name": "GSAT-23",
+      "tier": 3
+    },
+    {
+      "name": "Resourcesat-1",
+      "tier": 3
+    },
+    {
+      "name": "Cartosat-1",
+      "tier": 3
     }
   ],
   "metadata": {
     "total_tier1": 12,
     "total_tier2": 41,
-    "total_tier3": 85,
-    "fleet_total": 138,
-    "last_updated": "2026-05-17",
+    "total_tier3": 105,
+    "fleet_total": 158,
+    "last_updated": "2026-05-18",
     "source": "ISRO Satellite Centre (URSC) public records"
   }
 }

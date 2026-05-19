@@ -19,6 +19,7 @@ from app.utils.constants import (
     NASA_DONKI_CME_BASE_URL,
     NOAA_ALERTS_URL,
     NOAA_KP_INDEX_URL,
+    NOAA_SOLAR_MAG_URL,
     NOAA_SOLAR_WIND_URL,
     NOAA_XRAY_FLUX_URL,
     REQUEST_TIMEOUT_S,
@@ -117,18 +118,34 @@ def fetch_solar_wind() -> Optional[Dict[str, Any]]:
         Keys: time_tag, bx_gsm, by_gsm, bz_gsm, bt, speed, density,
               temperature, range_kp, active, source.
     """
-    data = retry_request(NOAA_SOLAR_WIND_URL, source_name="noaa_swpc")
+    wind_data = retry_request(NOAA_SOLAR_WIND_URL, source_name="noaa_swpc_wind")
+    mag_data = retry_request(NOAA_SOLAR_MAG_URL, source_name="noaa_swpc_mag")
 
-    if not data or not isinstance(data, list):
+    if not wind_data or not isinstance(wind_data, list):
         logger.error("Solar wind fetch returned no data")
         return None
 
-    # Most recent reading is last item
-    latest = data[-1]
+    latest_wind = wind_data[-1]
+    latest_mag = mag_data[-1] if mag_data and isinstance(mag_data, list) else {}
+    latest = {
+        "time_tag": latest_mag.get("time_tag") or latest_wind.get("time_tag"),
+        "bx_gsm": latest_mag.get("bx_gsm"),
+        "by_gsm": latest_mag.get("by_gsm"),
+        "bz_gsm": latest_mag.get("bz_gsm"),
+        "bt": latest_mag.get("bt"),
+        "speed": latest_wind.get("speed") or latest_wind.get("proton_speed"),
+        "density": latest_wind.get("density") or latest_wind.get("proton_density"),
+        "temperature": latest_wind.get("temperature") or latest_wind.get("proton_temperature"),
+        "range_kp": latest_wind.get("range_kp"),
+        "active": latest_wind.get("active", True),
+        "source": "NOAA_RTSW_MAG_WIND",
+        "_wind_time_tag": latest_wind.get("time_tag"),
+        "_mag_time_tag": latest_mag.get("time_tag"),
+    }
 
     if latest.get("bz_gsm") is None:
         logger.warning(
-            "BZ_NULL | source=DSCOVR | time=%s", latest.get("time_tag", "unknown")
+            "BZ_NULL | source=DSCOVR_MAG | time=%s", latest.get("_mag_time_tag", "unknown")
         )
 
     return latest

@@ -11,6 +11,9 @@ All physical limits, API endpoints, storm thresholds, and retention policies.
 NOAA_SOLAR_WIND_URL = (
     "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
 )
+NOAA_SOLAR_MAG_URL = (
+    "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"
+)
 NOAA_KP_INDEX_URL = (
     "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 )
@@ -424,3 +427,216 @@ ISRO_SATELLITES_JSON_PATH: str = "app/data/isro_satellites.json"
 NAVIC_DEGRADATION_KP: float = 5.0
 NAVIC_IMPAIRED_KP: float = 7.0
 NAVIC_AFFECTED_USERS_MILLION: int = 500
+
+# =============================================================================
+# LAYER 5 - India Power Grid GIC Risk Engine
+# =============================================================================
+
+E_REFERENCE_MV_PER_KM: float = 10.0
+GEO_FIELD_KP_EXPONENT: float = 2.2
+GEO_FIELD_LAT_DENOMINATOR: float = 3600.0
+G5_LAT_AMPLIFICATION: float = 1.5
+
+GROUND_H_FACTORS: dict = {
+    "RESISTIVE": 1.4,
+    "AVERAGE": 1.0,
+    "CONDUCTIVE": 0.6,
+    "UNKNOWN": 1.0,
+}
+
+EEJ_BASE_FACTOR: float = 0.3
+ORIENTATION_EASTWARD_FRACTION: float = 0.3
+GROUNDING_RESISTANCE_OHM: float = 0.3
+
+RESISTANCE_PER_KM: dict = {
+    765: 0.028,
+    400: 0.055,
+    220: 0.110,
+}
+
+SATURATION_THRESHOLDS: dict = {
+    "765kV_auto": {
+        "safe": 7,
+        "minor": 14,
+        "moderate": 35,
+        "severe": 70,
+        "critical": 100,
+    },
+    "765kV_power": {
+        "safe": 10,
+        "minor": 20,
+        "moderate": 50,
+        "severe": 100,
+        "critical": 140,
+    },
+    "400kV_power": {
+        "safe": 10,
+        "minor": 20,
+        "moderate": 45,
+        "severe": 90,
+        "critical": 120,
+    },
+    "220kV_power": {
+        "safe": 12,
+        "minor": 25,
+        "moderate": 50,
+        "severe": 100,
+        "critical": 140,
+    },
+}
+
+SAFE_LIMIT_AMPS: float = 10.0
+POPULATION_GIC_GDP_CRORE_PER_MILLION: float = 8.0
+ECONOMIC_MULTIPLIER_NO_SPARE: float = 2.5
+DAMAGE_TIME_BASE_SECONDS: float = 90.0
+POPULATION_DEDUPLICATION: float = 0.7
+CASCADE_THRESHOLD_CRITICAL: int = 2
+CASCADE_THRESHOLD_HIGH: int = 4
+
+# Screening-scale amplification factor applied to the simplified
+# Viljanen-Pirjola plane-wave model to produce India-grid-realistic GIC
+# amplitude estimates. The raw uncalibrated formula remains separately
+# callable in Layer 5 for unit tests and physics sanity checks.
+GIC_OPERATIONAL_CALIBRATION_FACTOR: float = 75.0
+
+GIC_MODEL_NAME: str = "Viljanen-Pirjola simplified plane wave approximation"
+GIC_MODEL_ACCURACY_NOTE: str = (
+    "GIC estimates use simplified Viljanen-Pirjola plane-wave model with "
+    "calibration factor. Accuracy ±50% for screening purposes."
+)
+
+GRID_RISK_LEVEL_NUMERIC: dict = {
+    "CRITICAL": 4,
+    "HIGH": 3,
+    "MODERATE": 2,
+    "LOW": 1,
+    "MINIMAL": 0,
+}
+
+GRID_RISK_LEVEL_COLORS: dict = {
+    "CRITICAL": "#EF5350",
+    "HIGH": "#FF8F00",
+    "MODERATE": "#FDD835",
+    "LOW": "#66BB6A",
+    "MINIMAL": "#78909C",
+}
+
+WS_EVENT_GRID_RISK_CHANGE: str = "grid_risk_change"
+WS_EVENT_NLDC_ALERT: str = "nldc_alert"
+
+RETENTION_GRID_RISK_DAYS: int = 90
+RETENTION_GRID_EVENTS_DAYS: int = 90
+
+# =============================================================================
+# LAYER 6 - Mission Control Advisory Generator
+# =============================================================================
+
+GROQ_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_MAX_TOKENS: int = 1500
+GROQ_TEMPERATURE: float = 0.2
+GROQ_TIMEOUT_SECONDS: int = 30
+GROQ_MAX_RETRIES: int = 3
+GROQ_RETRY_DELAYS: list = [2, 5, 10]
+
+ADVISORY_MIN_INTERVAL_MINUTES: int = 10
+ADVISORY_STORM_INTERVAL_MINUTES: int = 30
+ADVISORY_RECOVERY_INTERVAL_MINUTES: int = 20
+ADVISORY_CME_MIN_INTERVAL_MINUTES: int = 5
+ADVISORY_HISTORY_MAX_LENGTH: int = 20
+ADVISORY_VALIDITY_MINUTES: int = 30
+MAX_CONSECUTIVE_GROQ_FAILURES: int = 3
+ADVISORY_ID_PREFIX: str = "ADV"
+IST_TIMEZONE: str = "Asia/Kolkata"
+
+RETENTION_ADVISORY_HISTORY_DAYS: int = 90
+RETENTION_ADVISORY_TRIGGER_LOG_DAYS: int = 30
+WS_EVENT_NEW_ADVISORY: str = "new_advisory"
+WS_EVENT_ADVISORY_UPDATE: str = "advisory_update"
+WS_EVENT_ADVISORY_SYSTEM_FAILURE: str = "advisory_system_failure"
+
+HISTORICAL_GIC_INCIDENTS: list = [
+    {
+        "name": "Quebec Blackout",
+        "date": "March 13, 1989",
+        "kp_peak": 9.0,
+        "storm_class": "G5",
+        "gic_amps_estimated": 100,
+        "duration_hours": 9,
+        "damage": (
+            "Hydro-Quebec 735kV system collapsed in 92 seconds. "
+            "6 million people lost power. Transformer at Chibougamau "
+            "permanently destroyed."
+        ),
+        "economic_impact": "Several hundred million Canadian dollars",
+        "latitude": 46.8,
+        "relevance_to_india": (
+            "India's 765kV network faces similar risk during G5 storms. "
+            "N-S corridors like Bina-Gwalior are India's equivalent of "
+            "Hydro-Quebec's most vulnerable lines."
+        ),
+    },
+    {
+        "name": "Halloween Storms - South Africa",
+        "date": "October 30, 2003",
+        "kp_peak": 9.0,
+        "storm_class": "G5",
+        "gic_amps_estimated": 40,
+        "duration_hours": 2,
+        "damage": (
+            "South African power utility Eskom reported transformer heating "
+            "and reactive power issues across the 400kV network. Demonstrated "
+            "that GIC affects low-latitude grids during G5 storms."
+        ),
+        "economic_impact": "Estimated tens of millions USD",
+        "latitude": 26.0,
+        "relevance_to_india": (
+            "South Africa (lat 26S) has similar latitude to northern India "
+            "(lat 26N). South African GIC during Halloween 2003 directly "
+            "informs Indian risk assessment at the same storm intensity."
+        ),
+    },
+    {
+        "name": "UK Grid Event",
+        "date": "October 30, 2003",
+        "kp_peak": 9.0,
+        "storm_class": "G5",
+        "gic_amps_estimated": 15,
+        "duration_hours": 1,
+        "damage": (
+            "National Grid UK recorded GIC flows in transmission network. "
+            "No permanent damage but reactive power compensation required."
+        ),
+        "economic_impact": "Minor operational costs",
+        "latitude": 52.0,
+        "relevance_to_india": (
+            "UK activated contingency protocols - this is the standard of "
+            "preparedness NAKSHATRA-KAVACH aims to provide for India."
+        ),
+    },
+]
+
+# =============================================================================
+# LAYER 7 - Historical Storm Replay Engine
+# =============================================================================
+
+STORM_DATA_DIR: str = "app/data/storms"
+STORM_CATALOG_PATH: str = "app/data/storms/storm_catalog.json"
+
+REPLAY_FRAME_CACHE_SIZE: int = 200
+REPLAY_ADVISORY_FRAME_INTERVAL: int = 20
+REPLAY_ACTIVE_ADVISORY_FRAME_INTERVAL: int = 50
+REPLAY_PAUSE_TIMEOUT_SECONDS: int = 30 * 60
+VALIDATION_SAMPLE_STEP: int = 30
+RESAMPLE_LIMIT_HOURS: int = 1
+
+SYNTHETIC_STORM_QUIET_KP: float = 1.5
+SYNTHETIC_STORM_MAIN_BZ: float = -22.0
+
+WS_EVENT_REPLAY_FRAME: str = "replay_frame"
+WS_EVENT_REPLAY_FRAME_READY: str = "replay_frame_ready"
+WS_EVENT_REPLAY_STATE_CHANGE: str = "replay_state_change"
+WS_EVENT_REPLAY_KEY_MOMENT: str = "replay_key_moment"
+WS_EVENT_REPLAY_VALIDATION_UPDATE: str = "replay_validation_update"
+WS_EVENT_REPLAY_COMPLETED: str = "replay_completed"
+
+RETENTION_REPLAY_SESSIONS_DAYS: int = 90

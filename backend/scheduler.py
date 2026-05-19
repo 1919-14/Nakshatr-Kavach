@@ -51,6 +51,16 @@ scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
 scheduler.add_listener(_on_job_executed, EVENT_JOB_EXECUTED)
 
 
+def _replay_mode_active() -> bool:
+    """Return True when Layer 7 is replaying historical data."""
+    try:
+        from app.services.replay_engine import PipelineInjector
+
+        return bool(PipelineInjector.REPLAY_MODE_ACTIVE)
+    except Exception:
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────
 # JOB FUNCTIONS — thin wrappers that import from services
 # ─────────────────────────────────────────────────────────────────
@@ -60,6 +70,9 @@ def _job_solar_wind_and_kp() -> None:
     Job 1: Poll NOAA solar wind and Kp every 60 seconds.
     Fetches, validates, updates snapshot, persists to DB, and triggers Layer 2.
     """
+    if _replay_mode_active():
+        logger.debug("Scheduler: Replay mode active - skipping live solar/Kp cycle")
+        return
     from app.services.ingestion_service import run_solar_wind_and_kp_poll
     run_solar_wind_and_kp_poll()
     try:
@@ -118,6 +131,87 @@ def _job_solar_wind_and_kp() -> None:
                                 sat_risks["critical_count"], sat_risks["high_count"],
                                 sat_risks["fleet_summary"]["highest_risk_satellite"],
                                 sat_risks["fleet_summary"]["highest_risk_score"])
+
+                            # ── Layer 5: India Power Grid GIC Risk Scoring ──
+                            try:
+                                from app.services.grid_risk_engine import (
+                                    check_and_emit_grid_alerts,
+                                    get_latest_grid_risks,
+                                    run_grid_risk_scoring,
+                                    save_grid_risks_to_db,
+                                    update_latest_grid_risks,
+                                )
+                                t_grid = _time.perf_counter()
+                                previous_grid_risks = get_latest_grid_risks()
+                                grid_risks = run_grid_risk_scoring(forecast, snapshot)
+                                grid_elapsed_ms = (_time.perf_counter() - t_grid) * 1000
+                                update_latest_grid_risks(grid_risks)
+                                save_grid_risks_to_db(grid_risks)
+                                check_and_emit_grid_alerts(grid_risks, previous_grid_risks)
+                                ns = grid_risks["national_summary"]
+                                logger.info(
+                                    "Grid scoring: %dms | Critical=%d | High=%d | "
+                                    "MaxGIC=%.1fA@%s | Impact=₹%.0fCr | Pop@Risk=%.1fM",
+                                    int(grid_elapsed_ms),
+                                    ns["critical_corridors_count"],
+                                    ns["high_corridors_count"],
+                                    ns["max_gic_amps"],
+                                    ns["max_gic_corridor"],
+                                    ns["total_economic_impact_crore"],
+                                    ns["population_at_risk_million"],
+                                )
+
+                                # Layer 6: event-driven mission advisory generation.
+                                try:
+                                    from app.services.advisory_generator import (
+                                        ADVISORY_GENERATOR,
+                                        append_advisory_history,
+                                        check_advisory_triggers,
+                                        save_advisory_to_db,
+                                        update_latest_advisory,
+                                    )
+                                    from app.utils.constants import (
+                                        WS_EVENT_ADVISORY_UPDATE,
+                                        WS_EVENT_NEW_ADVISORY,
+                                    )
+
+                                    triggered = check_advisory_triggers(
+                                        kp_forecast=forecast,
+                                        satellite_risks=sat_risks,
+                                        grid_risks=grid_risks,
+                                        solar_data=snapshot,
+                                    )
+                                    if triggered:
+                                        trigger_type = triggered["trigger_type"]
+                                        logger.info("Advisory trigger fired: %s", trigger_type)
+                                        advisory = ADVISORY_GENERATOR.generate(
+                                            trigger_type=trigger_type,
+                                            kp_forecast=forecast,
+                                            satellite_risks=sat_risks,
+                                            grid_risks=grid_risks,
+                                            solar_data=snapshot,
+                                        )
+                                        update_latest_advisory(advisory)
+                                        append_advisory_history(advisory)
+                                        save_advisory_to_db(advisory)
+                                        try:
+                                            from app import socketio
+
+                                            socketio.emit(WS_EVENT_NEW_ADVISORY, advisory)
+                                            socketio.emit(WS_EVENT_ADVISORY_UPDATE, advisory)
+                                        except Exception as sio_exc:
+                                            logger.debug("Advisory socket emit skipped: %s", sio_exc)
+                                        logger.info(
+                                            "Advisory generated: ID=%s Source=%s Urgency=%s Tokens=%d",
+                                            advisory["advisory_id"],
+                                            advisory["advisory_source"],
+                                            advisory["advisory_urgency"],
+                                            advisory["content"].get("_groq_metadata", {}).get("tokens_used", 0),
+                                        )
+                                except Exception as l6_exc:
+                                    logger.error("Layer 6 advisory generation failed: %s", l6_exc, exc_info=True)
+                            except Exception as l5_exc:
+                                logger.error("Layer 5 grid scoring failed: %s", l5_exc, exc_info=True)
                     except Exception as l4_exc:
                         logger.error("Layer 4 satellite scoring failed: %s", l4_exc, exc_info=True)
 
@@ -134,6 +228,9 @@ def _job_xray_and_alerts() -> None:
     Job 2: Poll GOES X-ray flux and NOAA alerts every 5 minutes.
     Updates xray and alert sections of the snapshot.
     """
+    if _replay_mode_active():
+        logger.debug("Scheduler: Replay mode active - skipping live xray/alerts cycle")
+        return
     from app.services.ingestion_service import run_xray_and_alerts_poll
     run_xray_and_alerts_poll()
 
@@ -143,6 +240,9 @@ def _job_cme() -> None:
     Job 3: Poll NASA DONKI CME catalog every 30 minutes.
     Updates CME section of snapshot and persists Earth-directed events to DB.
     """
+    if _replay_mode_active():
+        logger.debug("Scheduler: Replay mode active - skipping live CME cycle")
+        return
     from app.services.ingestion_service import run_cme_poll
     run_cme_poll()
 
@@ -162,6 +262,9 @@ def _job_emit_snapshot() -> None:
     Job 5: Push the full LATEST_SNAPSHOT to all connected WebSocket clients.
     Runs every 60 seconds. Also checks for stale data and emits data_stale event.
     """
+    if _replay_mode_active():
+        logger.debug("Scheduler: Replay mode active - skipping live solar_update emit")
+        return
     from app.services.ingestion_service import LATEST_SNAPSHOT, get_snapshot
     from app.utils.constants import DATA_AGE_STALE_SECONDS, WS_EVENT_DATA_STALE, WS_EVENT_SOLAR_UPDATE
     try:

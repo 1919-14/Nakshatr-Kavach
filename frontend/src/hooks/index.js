@@ -8,22 +8,30 @@ import {
   MOCK_SOLAR_WIND, MOCK_KP_FORECAST, MOCK_SATELLITES,
   MOCK_GRID_CORRIDORS, MOCK_ADVISORY,
 } from "../mock/mockData";
-import { normalizeKpForecast, buildKpChartData, normalizeAdvisory } from "../utils/apiNormalize";
+import {
+  normalizeKpForecast,
+  buildKpChartData,
+  buildKpChartDataWithHistory,
+  normalizeAdvisory,
+  normalizeSolarSnapshot,
+  normalizeSatelliteRisks,
+  normalizeGridRisks,
+  normalizeShapExplain,
+} from "../utils/apiNormalize";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== "false";
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === "true";
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 async function ensureSolarLive() {
   try {
-    const { data } = await axios.get(`${API_BASE}/api/solar/live`, { timeout: 25000 });
+    const { data } = await axios.get(`${API_BASE}/api/solar/live?allow_stale=true`, { timeout: 25000 });
     return data;
   } catch (e) {
     if (e.response?.status === 503) {
-      await axios.post(`${API_BASE}/api/v1/trigger`, {}, { timeout: 60000 });
-      const { data } = await axios.get(`${API_BASE}/api/solar/live`, { timeout: 25000 });
+      const { data } = await axios.get(`${API_BASE}/api/solar/status`, { timeout: 25000 });
       return data;
     }
-    const { data } = await axios.get(`${API_BASE}/api/solar-wind`, { timeout: 25000 });
+    const { data } = await axios.get(`${API_BASE}/api/solar/status`, { timeout: 25000 });
     return data;
   }
 }
@@ -43,13 +51,14 @@ export function useSolarData() {
     queryFn: async () => {
       if (USE_MOCK) return MOCK_SOLAR_WIND;
       const data = await ensureSolarLive();
-      setSolarWind(data);
-      const q = data?.data_quality || data?.quality;
+      const norm = normalizeSolarSnapshot(data);
+      setSolarWind(norm);
+      const q = norm?.data_quality || norm?.quality;
       setSystemStatus((s) => ({
         ...s,
-        noaa: q === "BAD" ? "offline" : q === "DEGRADED" ? "degraded" : "online",
+        noaa: q === "BAD" ? "offline" : ["DEGRADED", "STALE", "PARTIAL", "UNKNOWN"].includes(q) ? "degraded" : "online",
       }));
-      return data;
+      return norm;
     },
     refetchInterval: 60_000,
     staleTime: 30_000,
@@ -67,9 +76,16 @@ export function useKpForecast() {
         return MOCK_KP_FORECAST;
       }
       const { data } = await axios.get(`${API_BASE}/api/kp/forecast`, { timeout: 30000 });
+      let history = null;
+      try {
+        const res = await axios.get(`${API_BASE}/api/kp/history?hours=24`, { timeout: 15000 });
+        history = res.data;
+      } catch {
+        history = null;
+      }
       const norm = normalizeKpForecast(data);
       setKpForecast(norm);
-      setKpChartData(buildKpChartData(data));
+      setKpChartData(buildKpChartDataWithHistory(data, history));
       return norm;
     },
     refetchInterval: 60_000,
@@ -84,8 +100,12 @@ export function useSatelliteRisk() {
     queryFn: async () => {
       if (USE_MOCK) return MOCK_SATELLITES;
       const { data } = await axios.get(`${API_BASE}/api/satellites/risk`, { timeout: 30000 });
-      setSatellites(data);
-      return data;
+      const norm = normalizeSatelliteRisks(data);
+      setSatellites(norm);
+      axios.get(`${API_BASE}/api/satellites/tle`, { timeout: 45000 })
+        .then((tleResult) => setSatellites(normalizeSatelliteRisks(data, tleResult.data)))
+        .catch((error) => console.warn("Live TLE fetch failed; keeping catalog positions", error));
+      return norm;
     },
     refetchInterval: 60_000,
   });
@@ -99,8 +119,9 @@ export function useGridRisk() {
     queryFn: async () => {
       if (USE_MOCK) return MOCK_GRID_CORRIDORS;
       const { data } = await axios.get(`${API_BASE}/api/grid/risk`, { timeout: 30000 });
-      setGridCorridors(data);
-      return data;
+      const norm = normalizeGridRisks(data);
+      setGridCorridors(norm);
+      return norm;
     },
     refetchInterval: 60_000,
   });
@@ -113,8 +134,26 @@ export function useAdvisory() {
     queryKey: ["advisory"],
     queryFn: async () => {
       if (USE_MOCK) return MOCK_ADVISORY;
-      const { data } = await axios.get(`${API_BASE}/api/advisory/latest`, { timeout: 120000 });
-      const norm = normalizeAdvisory(data);
+      let { data } = await axios.get(`${API_BASE}/api/advisory/latest`, { timeout: 120000 });
+      let norm = normalizeAdvisory(data);
+
+      if (norm?.source === "RULE_BASED") {
+        try {
+          const { data: status } = await axios.get(`${API_BASE}/api/advisory/status`, { timeout: 30000 });
+          if (status?.groq_api_available) {
+            const generated = await axios.post(
+              `${API_BASE}/api/advisory/generate`,
+              { trigger_type: "MANUAL_REFRESH" },
+              { timeout: 120000 }
+            );
+            data = generated.data;
+            norm = normalizeAdvisory(data);
+          }
+        } catch (error) {
+          console.warn("Groq advisory auto-generation unavailable; keeping latest advisory", error);
+        }
+      }
+
       setAdvisory(norm);
       setSystemStatus((s) => ({
         ...s,
@@ -144,9 +183,10 @@ export function useShapExplain() {
         setShapExplain(mock);
         return mock;
       }
-      const { data } = await axios.get(`${API_BASE}/api/shap/explain`, { timeout: 60000 });
-      setShapExplain(data);
-      return data;
+      const { data } = await axios.get(`${API_BASE}/api/kp/shap`, { timeout: 60000 });
+      const norm = normalizeShapExplain(data);
+      setShapExplain(norm);
+      return norm;
     },
     refetchInterval: 120_000,
   });
@@ -162,27 +202,90 @@ export function useSocket() {
     setKpChartData,
     setGridCorridors,
     setShapExplain,
+    setReplayMode,
+    setReplayStatus,
+    setReplayFrame,
   } = useStormStore();
   const socketRef = useRef(null);
 
   useEffect(() => {
-    if (USE_MOCK) return;
+    const hydrateReplayFrame = async (frame) => {
+      if (!frame) return;
+      setReplayMode(Boolean(frame.is_historical));
+      setReplayFrame(frame);
+      setSolarWind((current) => ({
+        ...(current || {}),
+        timestamp: frame.storm_timestamp,
+        kp_current: frame.kp_current,
+        storm_class: frame.storm_class,
+        is_historical: Boolean(frame.is_historical),
+        replay_data_type: frame.replay_data_type,
+      }));
+      if (frame.advisory) setAdvisory(normalizeAdvisory(frame.advisory));
+
+      try {
+        const { data } = await axios.get(`${API_BASE}/api/replay/frame/${frame.frame_index}`, { timeout: 30000 });
+        const output = data?.output || {};
+        if (output.solar) {
+          setSolarWind(normalizeSolarSnapshot({
+            ...output.solar,
+            replay_data_type: frame.replay_data_type,
+          }));
+        }
+        if (output.kp_forecast) {
+          setKpForecast(normalizeKpForecast(output.kp_forecast));
+          setKpChartData(buildKpChartData(output.kp_forecast));
+        }
+        if (output.satellite_risks) setSatellites(normalizeSatelliteRisks(output.satellite_risks));
+        if (output.grid_risks) setGridCorridors(normalizeGridRisks(output.grid_risks));
+        if (output.advisory) setAdvisory(normalizeAdvisory(output.advisory));
+        if (output.shap) setShapExplain(normalizeShapExplain(output.shap));
+      } catch (error) {
+        if (error.response?.status !== 404) {
+          console.warn("Replay frame hydration failed", error);
+        }
+      }
+    };
+
     import("socket.io-client").then(({ io }) => {
       const s = io(API_BASE, { transports: ["websocket", "polling"] });
       socketRef.current = s;
-      s.on("solar_wind_update", setSolarWind);
-      s.on("satellite_update", setSatellites);
-      s.on("advisory_update", setAdvisory);
+      s.on("solar_wind_update", (payload) => {
+        if (!USE_MOCK) setSolarWind(normalizeSolarSnapshot(payload));
+      });
+      s.on("satellite_update", (payload) => {
+        if (!USE_MOCK) setSatellites(normalizeSatelliteRisks(payload));
+      });
+      s.on("advisory_update", (payload) => {
+        if (!USE_MOCK) setAdvisory(normalizeAdvisory(payload));
+      });
       s.on("dashboard_update", (payload) => {
+        if (USE_MOCK) return;
         if (!payload) return;
-        if (payload.solar_wind) setSolarWind(payload.solar_wind);
-        if (payload.satellites) setSatellites(payload.satellites);
-        if (payload.grid) setGridCorridors(payload.grid);
-        if (payload.shap) setShapExplain(payload.shap);
+        if (payload.solar_wind) setSolarWind(normalizeSolarSnapshot(payload.solar_wind));
+        if (payload.satellites) setSatellites(normalizeSatelliteRisks(payload.satellites));
+        if (payload.grid) setGridCorridors(normalizeGridRisks(payload.grid));
+        if (payload.shap) setShapExplain(normalizeShapExplain(payload.shap));
         if (payload.kp_forecast) {
           setKpForecast(normalizeKpForecast(payload.kp_forecast));
           setKpChartData(buildKpChartData(payload.kp_forecast));
         }
+      });
+      s.on("replay_frame", hydrateReplayFrame);
+      s.on("replay_frame_ready", (payload) => {
+        if (payload?.status === "READY" && payload.summary) {
+          hydrateReplayFrame(payload.summary);
+        }
+      });
+      s.on("replay_state_change", (payload) => {
+        setReplayStatus({
+          state: payload?.new_state,
+          frame: payload?.frame,
+          storm_name: payload?.storm_name,
+        });
+      });
+      s.on("replay_completed", (payload) => {
+        setReplayStatus({ state: "COMPLETED", ...payload });
       });
     });
     return () => {
@@ -197,6 +300,9 @@ export function useSocket() {
     setKpChartData,
     setGridCorridors,
     setShapExplain,
+    setReplayMode,
+    setReplayStatus,
+    setReplayFrame,
   ]);
 
   return socketRef.current;
@@ -287,9 +393,7 @@ export function useNowIST() {
   const [time, setTime] = useState("");
   useEffect(() => {
     const tick = () => {
-      const now = new Date();
-      const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-      setTime(ist.toISOString().slice(11, 19) + " IST");
+      setTime(new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) + " IST");
     };
     tick();
     const t = setInterval(tick, 1000);

@@ -7,15 +7,31 @@ import { getRiskColor } from "../../utils/riskColorMapper";
 // ── AlertBar (scrolling ticker between navbar and content) ────────────────────
 export const AlertBar = memo(() => {
   const { solarWind, satellites, kpForecast } = useStormStore();
-  const kp = solarWind?.kp_current ?? 0;
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h = asNum(kpForecast?.kp_3hr?.value);
+  const forecastValues = [
+    kpCurrent,
+    kpForecast?.kp_3hr?.value,
+    kpForecast?.kp_6hr?.value,
+    kpForecast?.kp_12hr?.value,
+    kpForecast?.kp_24hr?.value,
+  ].map(Number).filter(Number.isFinite);
+  const peakKp = forecastValues.length ? Math.max(...forecastValues) : 0;
+  const modeLabel = solarWind?.is_historical ? "REPLAY" : "LIVE";
 
   const highRiskSats = (satellites || []).filter(s => s.composite_risk > 60);
-  const show = kp >= 5 || highRiskSats.length > 0;
+  const show = peakKp >= 5 || highRiskSats.length > 0;
 
   if (!show) return null;
 
-  const barColor  = kp >= 7 ? "#F44336" : "#FF9800";
-  const arrival   = kpForecast?.peak_arrival_minutes;
+  const barColor  = peakKp >= 7 ? "#F44336" : "#FF9800";
+  const arrival   = peakKp >= 5 ? kpForecast?.peak_arrival_minutes : null;
+  const peakClass = kpForecast?.peak_storm_class || solarWind?.storm_class;
 
   const parts = [
     highRiskSats.length > 0
@@ -24,13 +40,15 @@ export const AlertBar = memo(() => {
     highRiskSats.find(s => s.safe_mode_minutes)
       ? `⚠ ${highRiskSats.find(s=>s.safe_mode_minutes).name} SAFE MODE RECOMMENDED`
       : null,
-    arrival
+    `KP CURRENT ${kpCurrent === null ? "--" : kpCurrent.toFixed(1)}`,
+    kp3h !== null ? `KP FORECAST 3H ${kp3h.toFixed(1)}` : null,
+    arrival && peakClass && peakClass !== "QUIET"
       ? `⚡ STORM PEAK IN T-${arrival} MIN`
       : null,
-    solarWind?.storm_class
-      ? `STORM CLASS ${solarWind.storm_class} ACTIVE — Kp ${kp.toFixed(1)}`
+    peakClass && forecastValues.length
+      ? `FORECAST PEAK ${peakClass} - Kp ${peakKp.toFixed(1)}`
       : null,
-    "NAKSHATRA-KAVACH MONITORING ACTIVE — ALL SYSTEMS NOMINAL",
+    `DATA ${solarWind?.data_quality || solarWind?.quality || "UNKNOWN"} - ${modeLabel} MODE`,
   ].filter(Boolean).join("  ·  ");
 
   return (
@@ -65,7 +83,7 @@ export const AlertBar = memo(() => {
           color:       barColor,
           letterSpacing: "0.1em",
         }}>
-          LIVE ALERT
+          {modeLabel} ALERT
         </div>
 
         {/* Scrolling text */}
@@ -88,8 +106,8 @@ export const AlertBar = memo(() => {
 
 // ── EdgeGlow (viewport border glow during storm) ──────────────────────────────
 export const EdgeGlow = memo(() => {
-  const { solarWind } = useStormStore();
-  const kp  = solarWind?.kp_current ?? 0;
+  const { solarWind, kpForecast } = useStormStore();
+  const kp  = Number(solarWind?.kp_current ?? kpForecast?.current_kp ?? kpForecast?.kp_3hr?.value ?? 0);
   const glow = getEdgeGlow(kp);
 
   if (glow === "none") return null;
@@ -112,7 +130,7 @@ export const EdgeGlow = memo(() => {
 // ── StormAlertOverlay ─────────────────────────────────────────────────────────
 export const StormAlertOverlay = memo(() => {
   const { solarWind, kpForecast, alertOverlayVisible, hideAlertOverlay } = useStormStore();
-  const kp = solarWind?.kp_current ?? 0;
+  const kp = Number(solarWind?.kp_current ?? kpForecast?.current_kp ?? kpForecast?.kp_3hr?.value ?? 0);
   const sc = getStormClass(kp);
 
   // useEffect MUST be before early return — Rules of Hooks

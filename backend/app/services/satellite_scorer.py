@@ -125,8 +125,8 @@ def calculate_radiation_risk(satellite: dict, kp_peak: float, solar_data: dict) 
     xray_sev = solar_data.get("xray_severity_numeric", 1)
     xray_f = XRAY_SEU_FACTORS.get(xray_sev, 1.0)
     if satellite.get("orbit_type") == "L1_HALO":
-        base = (kp_peak / 9.0) * 80.0
-        xray_c = xray_f * 20.0
+        base = (kp_peak / 9.0) * 50.0
+        xray_c = xray_f * 15.0
     else:
         base = (kp_peak / 9.0) * 60.0
         xray_c = xray_f * 15.0
@@ -229,6 +229,31 @@ def compute_all_orbit_params() -> List[dict]:
         sat_db.load()
     out = [compute_orbit_params(s) for s in sat_db.get_all_tier1() + sat_db.get_all_tier2()]
     return sorted(out, key=lambda p: p["dashboard_priority"])
+
+
+def _catalog_only_satellite(sat: dict, tier: int) -> dict:
+    name = sat.get("name", "UNKNOWN")
+    return {
+        "name": name,
+        "display_name": sat.get("display_name", name),
+        "tier": sat.get("tier", tier),
+        "orbit_type": sat.get("orbit_type", "CATALOG"),
+        "altitude_km": sat.get("altitude_km"),
+        "inclination_deg": sat.get("inclination_deg"),
+        "mission": sat.get("mission", "Catalogued ISRO/India fleet asset"),
+        "tlenorad_id": sat.get("tlenorad_id"),
+        "norad_id": sat.get("norad_id"),
+        "risk_scores": {"drag_risk": 0.0, "charging_risk": 0.0,
+                        "radiation_risk": 0.0, "clock_anomaly_risk": 0.0,
+                        "composite_raw": 0.0, "composite_final": 0.0,
+                        "criticality_multiplier": 1.0},
+        "risk_level": "MINIMAL",
+        "risk_level_numeric": RISK_LEVEL_NUMERIC.get("MINIMAL", 0),
+        "risk_color_hex": RISK_LEVEL_COLORS.get("MINIMAL", "#9E9E9E"),
+        "recommended_action": "Monitor catalog asset during storm escalation",
+        "urgency": "NONE",
+        "primary_threat": "catalog_only",
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -335,19 +360,30 @@ def run_satellite_scoring(kp_fc: dict, snapshot: dict) -> dict:
                           "critical_action": "Initiate safe mode", "direct_radiation_exposure": False}, **s}, kp_fc, solar)
         t2.append({"name": r["name"], "composite_final": r["risk_scores"]["composite_final"],
                     "risk_level": r["risk_level"], "risk_color_hex": r["risk_color_hex"],
-                    "orbit_type": r["orbit_type"], "altitude_km": r["altitude_km"], "primary_threat": r["primary_threat"]})
+                    "orbit_type": r["orbit_type"], "altitude_km": r["altitude_km"],
+                    "inclination_deg": s.get("inclination_deg"), "mission": s.get("mission", ""),
+                    "tlenorad_id": s.get("tlenorad_id"), "norad_id": s.get("norad_id"),
+                    "primary_threat": r["primary_threat"]})
+
+    t3 = [_catalog_only_satellite(s, 3) for s in sat_db.tier3]
 
     crit = sum(1 for r in t1.values() if r["risk_level"] == "CRITICAL")
     high = sum(1 for r in t1.values() if r["risk_level"] == "HIGH")
-    best = max(t1.values(), key=lambda r: r["risk_scores"]["composite_final"]) if t1 else {}
+    tier2_crit = sum(1 for r in t2 if r["risk_level"] == "CRITICAL")
+    tier2_high = sum(1 for r in t2 if r["risk_level"] == "HIGH")
+    scored_all = list(t1.values()) + [{"name": r["name"], "risk_scores": {"composite_final": r["composite_final"]}} for r in t2]
+    best = max(scored_all, key=lambda r: r["risk_scores"]["composite_final"]) if scored_all else {}
     def_risk = sum(1 for r in t1.values() if r.get("criticality") == "DEFENSE_CRITICAL" and r["risk_level"] in ("HIGH", "CRITICAL"))
     nav = t1.get("NavIC-IRNSS", {})
     val = sum(s.get("asset_value_crore", 0) for s in sat_db.get_all_tier1()
               if t1.get(s["name"], {}).get("risk_level") in ("HIGH", "CRITICAL"))
 
     return {"computed_at_utc": now, "kp_used": round(kp_peak, 1), "storm_class_used": storm,
-            "total_at_risk": crit + high, "critical_count": crit, "high_count": high,
-            "fleet_monitored": sat_db.fleet_count(), "tier1": t1, "tier2": t2,
+            "total_at_risk": crit + high + tier2_crit + tier2_high,
+            "critical_count": crit, "high_count": high,
+            "tier2_critical_count": tier2_crit, "tier2_high_count": tier2_high,
+            "fleet_critical_count": crit + tier2_crit, "fleet_high_count": high + tier2_high,
+            "fleet_monitored": sat_db.fleet_count(), "tier1": t1, "tier2": t2, "tier3": t3,
             "tier3_count": len(sat_db.tier3),
             "fleet_summary": {"highest_risk_satellite": best.get("name", "N/A"),
                               "highest_risk_score": best.get("risk_scores", {}).get("composite_final", 0),

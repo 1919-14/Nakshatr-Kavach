@@ -2,7 +2,6 @@ import React, { memo, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Polyline, Popup, useMap } from "react-leaflet";
 import { motion } from "framer-motion";
 import { useStormStore } from "../../store/useStormStore";
-import { MOCK_GRID_CORRIDORS } from "../../mock/mockData";
 import { getRiskColor } from "../../utils/riskColorMapper";
 import { SectionLabel } from "../ui/index";
 import "leaflet/dist/leaflet.css";
@@ -111,9 +110,9 @@ function CorridorPopup({ corridor }) {
 }
 
 // ── India Grid Map ────────────────────────────────────────────────────────────
-export const IndiaGridMap = memo(() => {
+export const IndiaGridMap = memo(({ onSelect }) => {
   const { gridCorridors } = useStormStore();
-  const corridors = gridCorridors?.length ? gridCorridors : MOCK_GRID_CORRIDORS;
+  const corridors = gridCorridors?.length ? gridCorridors : [];
 
   return (
     <div style={{
@@ -159,6 +158,7 @@ export const IndiaGridMap = memo(() => {
                   opacity:   0.85,
                   dashArray,
                 }}
+                eventHandlers={{ click: () => onSelect?.(corridor.id) }}
               >
                 <Popup>
                   <CorridorPopup corridor={corridor} />
@@ -167,6 +167,23 @@ export const IndiaGridMap = memo(() => {
             );
           })}
         </MapContainer>
+
+        {!corridors.length && (
+          <div style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#607D8B",
+            fontSize: 12,
+            pointerEvents: "none",
+            background: "rgba(2,8,23,0.42)",
+          }}>
+            Waiting for live grid risk corridors
+          </div>
+        )}
 
         {/* Legend */}
         <div style={{

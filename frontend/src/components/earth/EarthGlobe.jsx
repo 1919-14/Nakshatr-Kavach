@@ -1,4 +1,4 @@
-import React, { useRef, Suspense, memo, useCallback } from "react";
+import React, { useRef, Suspense, memo, useCallback, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars, Trail, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -11,7 +11,6 @@ import { StormCone }      from "./StormCone";
 import { SatelliteOrbit } from "./SatelliteOrbit";
 
 import { useStormStore }   from "../../store/useStormStore";
-import { MOCK_SATELLITES } from "../../mock/mockData";
 import { getRiskColor }    from "../../utils/riskColorMapper";
 import { CircularProgress, AnimatedBar, RiskLevelBadge, OrbitTypeBadge, CountdownTimer } from "../ui/index";
 
@@ -114,8 +113,9 @@ function Scene({ kp, stormActive, satellites, selectedId, onSelectSat }) {
           onClick={() => onSelectSat(sat.id)}
         />
       ))}
-      <OrbitControls enablePan={false} minDistance={4} maxDistance={22}
-        autoRotate autoRotateSpeed={0.18} enableDamping dampingFactor={0.06} />
+      <OrbitControls enablePan enableZoom zoomToCursor screenSpacePanning
+        minDistance={2.4} maxDistance={55}
+        autoRotate autoRotateSpeed={0.08} enableDamping dampingFactor={0.06} />
     </>
   );
 }
@@ -131,8 +131,8 @@ function SatDetailPanel({ satellite, onClose }) {
       style={{ position:"absolute",top:0,right:0,bottom:0,
         width:"min(340px,88vw)",background:"rgba(2,8,23,0.96)",
         backdropFilter:"blur(20px)",borderLeft:`1px solid ${color}33`,
-        zIndex:40,overflowY:"auto",fontFamily:"Space Grotesk,sans-serif",
-        color:"#E8F4FD" }}>
+        zIndex:1000,overflowY:"auto",fontFamily:"Space Grotesk,sans-serif",
+        color:"#E8F4FD", paddingTop:32 }}>
       <div style={{ padding:"16px 18px 12px",borderBottom:`1px solid ${color}22` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
           <div>
@@ -200,22 +200,47 @@ function SatDetailPanel({ satellite, onClose }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export const EarthGlobe = memo(({ height="100%", fullScreen=false }) => {
-  const { solarWind, satellites, selectedSatellite, selectSatellite, clearSatellite } = useStormStore();
-  const kp          = solarWind?.kp_current ?? 0;
-  const stormActive = kp >= 5;
-  const satList     = satellites?.length ? satellites : MOCK_SATELLITES;
+export const EarthGlobe = memo(({ height="100%", fullScreen=false, allowExpand=true }) => {
+  const { solarWind, kpForecast, satellites, selectedSatellite, selectSatellite, clearSatellite } = useStormStore();
+  const [expanded, setExpanded] = useState(false);
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h = asNum(kpForecast?.kp_3hr?.value);
+  const sceneKp = kpCurrent ?? kp3h ?? 0;
+  const stormActive = sceneKp >= 5;
+  const satList     = satellites?.length ? satellites : [];
   const selectedSat = satList.find(s=>s.id===selectedSatellite) ?? null;
 
   const handleSelect = useCallback((id) => {
     selectSatellite(id===selectedSatellite ? null : id);
   }, [selectedSatellite, selectSatellite]);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && expanded) {
+        setExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [expanded]);
+
   return (
+    <>
     <div style={{ position:"relative",width:"100%",height,
-      background:"radial-gradient(ellipse at center,#0D1B3E 0%,#020817 100%)",
+      background:"linear-gradient(145deg,#020817 0%,#071832 42%,#020817 100%)",
       borderRadius:fullScreen?0:12,overflow:"hidden",
-      border:fullScreen?"none":"1px solid rgba(0,212,255,0.12)" }}>
+      border:fullScreen?"none":"1px solid rgba(0,212,255,0.16)",
+      boxShadow:fullScreen?"none":"0 22px 70px rgba(0,0,0,0.42), inset 0 0 34px rgba(0,212,255,0.05)" }}>
+      <div style={{
+        position:"absolute", inset:0, pointerEvents:"none", zIndex:2,
+        background:"linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+        backgroundSize:"48px 48px", opacity:0.2,
+      }} />
       <Canvas
         camera={{ position:[0,2.5,8],fov:58,near:0.1,far:500 }}
         dpr={[1,1.5]}
@@ -223,22 +248,50 @@ export const EarthGlobe = memo(({ height="100%", fullScreen=false }) => {
         style={{ background:"transparent" }}
       >
         <Suspense fallback={null}>
-          <Scene
-            kp={kp}
-            stormActive={stormActive}
-            satellites={satList}
-            selectedId={selectedSatellite}
-            onSelectSat={handleSelect}
-          />
+          {(!expanded || fullScreen) && (
+            <Scene
+              kp={sceneKp}
+              stormActive={stormActive}
+              satellites={satList}
+              selectedId={selectedSatellite}
+              onSelectSat={handleSelect}
+            />
+          )}
         </Suspense>
       </Canvas>
+
+      <div style={{ position:"absolute",top:14,left:14,zIndex:12,pointerEvents:"none" }}>
+        <div style={{ color:"#E8F4FD",fontFamily:"Orbitron,sans-serif",fontSize:12,fontWeight:800,letterSpacing:"0.12em" }}>
+          ORBITAL SITUATION ROOM
+        </div>
+        <div style={{ color:"#78909C",fontSize:10,marginTop:4,fontFamily:"JetBrains Mono,monospace" }}>
+          {satList.length} assets | Kp current {kpCurrent === null ? "--" : kpCurrent.toFixed(1)} | +3h {kp3h === null ? "--" : kp3h.toFixed(1)} | {solarWind?.is_historical ? "REPLAY" : "LIVE"} context
+        </div>
+      </div>
+
+      {allowExpand && (
+        <button
+          onClick={() => setExpanded(true)}
+          title="Open globe fullscreen"
+          style={{
+            position:"absolute",top:12,right:12,zIndex:20,
+            width:34,height:34,borderRadius:8,
+            border:"1px solid rgba(0,212,255,0.32)",
+            background:"rgba(2,8,23,0.72)",color:"#00D4FF",
+            fontFamily:"Orbitron,sans-serif",fontSize:16,cursor:"pointer",
+            boxShadow:"0 0 18px rgba(0,212,255,0.16)",
+          }}
+        >
+          ⛶
+        </button>
+      )}
 
       {!selectedSatellite && (
         <div style={{ position:"absolute",bottom:14,left:"50%",
           transform:"translateX(-50%)",fontSize:10,color:"#546E7A",
           fontFamily:"JetBrains Mono,monospace",pointerEvents:"none",
           letterSpacing:"0.06em" }}>
-          CLICK SATELLITE LABEL TO INSPECT
+          {satList.length ? `${satList.length} CATALOG SATELLITES LOADED` : "WAITING FOR LIVE SATELLITE CATALOG"}
         </div>
       )}
 
@@ -248,6 +301,46 @@ export const EarthGlobe = memo(({ height="100%", fullScreen=false }) => {
         )}
       </AnimatePresence>
     </div>
+
+    <AnimatePresence>
+      {expanded && (
+        <motion.div
+          initial={{ opacity:0 }}
+          animate={{ opacity:1 }}
+          exit={{ opacity:0 }}
+          style={{
+            position:"fixed", inset:0, zIndex:2000,
+            background:"#020817",
+          }}
+        >
+          <EarthGlobe height="100vh" fullScreen allowExpand={false} />
+          {/* Minimize button placed prominently */}
+          <button
+            onClick={() => setExpanded(false)}
+            title="Minimize globe (Esc)"
+            style={{
+              position: "absolute",
+              top: 80,
+              right: 24,
+              zIndex: 9999,
+              border: "1px solid rgba(0,212,255,0.4)",
+              background: "rgba(2,8,23,0.9)",
+              color: "#00D4FF",
+              borderRadius: 8,
+              padding: "12px 18px",
+              cursor: "pointer",
+              fontFamily: "Orbitron,sans-serif",
+              fontSize: 13,
+              fontWeight: 800,
+              boxShadow: "0 0 20px rgba(0,212,255,0.2)",
+            }}
+          >
+            MINIMIZE (ESC)
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 });
 

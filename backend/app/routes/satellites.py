@@ -2,10 +2,14 @@
 """NAKSHATRA-KAVACH Layer 4: Satellite vulnerability REST endpoints."""
 from __future__ import annotations
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from flask import Blueprint, jsonify, request
+import requests
 
 logger = logging.getLogger(__name__)
 satellites_bp = Blueprint("satellites", __name__, url_prefix="/api/satellites")
+_TLE_CACHE: dict = {"expires": 0.0, "payload": None}
 
 
 @satellites_bp.route("/risk", methods=["GET"])
@@ -76,6 +80,95 @@ def get_catalog():
         result["tier3"] = sat_db.tier3
     result["fleet_count"] = sat_db.fleet_count()
     return jsonify(result)
+
+
+@satellites_bp.route("/tle", methods=["GET"])
+def get_live_tles():
+    """Fetch current public TLEs from CelesTrak for catalogued NORAD IDs."""
+    from app.services.satellite_scorer import sat_db
+    if not sat_db.is_loaded:
+        sat_db.load()
+
+    now = time.time()
+    if _TLE_CACHE["payload"] and now < _TLE_CACHE["expires"]:
+        return jsonify(_TLE_CACHE["payload"])
+
+    catalog = sat_db.get_all_tier1() + sat_db.get_all_tier2() + sat_db.tier3
+    by_norad = {}
+    for sat in catalog:
+        norad = sat.get("norad_id") or sat.get("tlenorad_id")
+        if norad:
+            by_norad[str(norad)] = sat
+
+    if request.args.get("live", "").lower() not in {"1", "true", "yes"}:
+        return jsonify({
+            "source": "CelesTrak GP",
+            "count": 0,
+            "requested": len(by_norad),
+            "satellites": [],
+            "errors": [],
+            "cache_seconds": 0,
+            "live_refresh_skipped": True,
+            "message": "Pass live=true to refresh public TLEs; dashboard uses local TLE cache plus catalog fallback by default.",
+        })
+
+    def fetch_one(norad: str, sat: dict) -> tuple[dict | None, dict | None]:
+        try:
+            response = requests.get(
+                "https://celestrak.org/NORAD/elements/gp.php",
+                params={"CATNR": norad, "FORMAT": "TLE"},
+                headers={"User-Agent": "Nakshatra-Kavach/1.0 hackathon demo"},
+                timeout=(2, 4),
+            )
+            response.raise_for_status()
+            lines = [line.strip() for line in response.text.splitlines() if line.strip()]
+            tle1 = next((line for line in lines if line.startswith("1 ")), None)
+            tle2 = next((line for line in lines if line.startswith("2 ")), None)
+            if not tle1 or not tle2:
+                return None, {"norad_id": norad, "name": sat.get("name"), "error": "No TLE lines returned"}
+            return {
+                "name": sat.get("name"),
+                "display_name": sat.get("display_name", sat.get("name")),
+                "norad_id": norad,
+                "tle1": tle1,
+                "tle2": tle2,
+                "epoch": tle1[18:32].strip() if len(tle1) >= 32 else None,
+                "source": "CelesTrak GP",
+            }, None
+        except Exception as exc:
+            return None, {"norad_id": norad, "name": sat.get("name"), "error": str(exc)}
+
+    satellites = []
+    errors = []
+    executor = ThreadPoolExecutor(max_workers=min(6, max(1, len(by_norad))))
+    futures = [executor.submit(fetch_one, norad, sat) for norad, sat in by_norad.items()]
+    done, pending = wait(futures, timeout=12)
+    for future in done:
+        try:
+            sat_payload, err_payload = future.result()
+        except Exception as exc:
+            sat_payload, err_payload = None, {"norad_id": None, "name": None, "error": str(exc)}
+        if sat_payload:
+            satellites.append(sat_payload)
+        if err_payload:
+            errors.append(err_payload)
+    for future in pending:
+        future.cancel()
+    executor.shutdown(wait=False, cancel_futures=True)
+    if pending:
+        errors.append({"error": f"TLE fetch timed out for {len(pending)} satellite(s)"})
+
+    payload = {
+        "source": "CelesTrak GP",
+        "count": len(satellites),
+        "requested": len(by_norad),
+        "satellites": satellites,
+        "errors": errors[:10],
+        "cache_seconds": 6 * 60 * 60,
+    }
+    _TLE_CACHE["payload"] = payload
+    _TLE_CACHE["expires"] = now + payload["cache_seconds"]
+    return jsonify(payload)
 
 
 @satellites_bp.route("/navic", methods=["GET"])

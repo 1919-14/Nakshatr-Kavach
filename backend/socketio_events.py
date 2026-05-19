@@ -23,15 +23,23 @@ def register_socketio_events(socketio) -> None:
     def handle_connect():
         """Send the current snapshot immediately to a newly connected client."""
         logger.info("WebSocket client connected")
+        try:
+            from app.services.replay_engine import PipelineInjector
+
+            if PipelineInjector.REPLAY_MODE_ACTIVE:
+                socketio.emit("replay_state_change", {"new_state": "PLAYING", "previous_state": "UNKNOWN", "frame": None})
+                return
+        except Exception:
+            pass
         from app.services.ingestion_service import get_snapshot
         from app.utils.constants import WS_EVENT_SOLAR_UPDATE
         snapshot = get_snapshot()
         socketio.emit(WS_EVENT_SOLAR_UPDATE, snapshot)
 
     @socketio.on("disconnect")
-    def handle_disconnect():
+    def handle_disconnect(reason=None):
         """Log client disconnection."""
-        logger.info("WebSocket client disconnected")
+        logger.info("WebSocket client disconnected%s", f" | reason={reason}" if reason else "")
 
     @socketio.on("request_snapshot")
     def handle_request_snapshot(data=None):
@@ -39,6 +47,14 @@ def register_socketio_events(socketio) -> None:
         Allow clients to request an on-demand snapshot push.
         Payload: ignored.
         """
+        try:
+            from app.services.replay_engine import PipelineInjector
+
+            if PipelineInjector.REPLAY_MODE_ACTIVE:
+                socketio.emit("replay_state_change", {"new_state": "PLAYING", "previous_state": "UNKNOWN", "frame": None})
+                return
+        except Exception:
+            pass
         from app.services.ingestion_service import get_snapshot
         from app.utils.constants import WS_EVENT_SOLAR_UPDATE
         logger.debug("Client requested on-demand snapshot")

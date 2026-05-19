@@ -69,7 +69,7 @@ def get_live():
     """
     snapshot = get_snapshot()
     stale = _stale_response(snapshot)
-    if stale:
+    if stale and request.args.get("allow_stale", "").lower() not in {"1", "true", "yes"}:
         return stale
 
     resp = jsonify(snapshot)

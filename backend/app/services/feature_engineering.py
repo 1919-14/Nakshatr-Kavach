@@ -262,6 +262,13 @@ _scaler_lstm: Optional[Any] = None
 _scalers_loaded: bool = False
 
 
+class _IdentityScaler:
+    """Passthrough scaler used when current models consume raw engineered features."""
+
+    def transform(self, values: Any) -> np.ndarray:
+        return np.asarray(values)
+
+
 def _utcnow_iso() -> str:
     """Return the current UTC time as an ISO-8601 string ending in Z."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -1250,20 +1257,27 @@ def load_scalers(
         RuntimeError: If either scaler file is missing or cannot be loaded.
     """
     global _scaler_xgb, _scaler_lstm, _scalers_loaded
+    resolved_xgb = Path(xgb_path) if xgb_path is not None else _resolve_backend_path(SCALER_XGB_PATH)
+    resolved_lstm = Path(lstm_path) if lstm_path is not None else _resolve_backend_path(SCALER_LSTM_PATH)
+    missing = [str(path) for path in (resolved_xgb, resolved_lstm) if not path.exists()]
+    if missing:
+        message = f"Layer 2 scaler file(s) missing: {', '.join(missing)}"
+        if xgb_path is not None or lstm_path is not None:
+            _scalers_loaded = False
+            logger.critical(message)
+            raise RuntimeError(message)
+        with _scaler_lock:
+            _scaler_xgb = _IdentityScaler()
+            _scaler_lstm = _IdentityScaler()
+            _scalers_loaded = True
+        logger.warning("%s; using raw feature passthrough scalers for runtime inference", message)
+        return
+
     try:
         import joblib
     except Exception as exc:
         logger.critical("joblib is required to load Layer 2 scalers: %s", exc)
         raise RuntimeError("Layer 2 scalers cannot load because joblib is unavailable") from exc
-
-    resolved_xgb = Path(xgb_path) if xgb_path is not None else _resolve_backend_path(SCALER_XGB_PATH)
-    resolved_lstm = Path(lstm_path) if lstm_path is not None else _resolve_backend_path(SCALER_LSTM_PATH)
-    missing = [str(path) for path in (resolved_xgb, resolved_lstm) if not path.exists()]
-    if missing:
-        _scalers_loaded = False
-        message = f"Layer 2 scaler file(s) missing: {', '.join(missing)}"
-        logger.critical(message)
-        raise RuntimeError(message)
     with _scaler_lock:
         _scaler_xgb = joblib.load(resolved_xgb)
         _scaler_lstm = joblib.load(resolved_lstm)
@@ -1299,6 +1313,8 @@ def scale_xgb_vector(raw_vector: np.ndarray) -> np.ndarray:
         if not scalers_loaded():
             raise RuntimeError("Layer 2 XGB scaler has not been loaded")
         scaled = _scaler_xgb.transform(raw_vector.reshape(1, -1))[0]
+        if isinstance(_scaler_xgb, _IdentityScaler):
+            return np.asarray(scaled, dtype=np.float64)
     return np.clip(np.asarray(scaled, dtype=np.float64), 0.0, 1.0)
 
 
@@ -1320,6 +1336,8 @@ def scale_lstm_sequence(raw_sequence: np.ndarray) -> np.ndarray:
         if not scalers_loaded():
             raise RuntimeError("Layer 2 LSTM scaler has not been loaded")
         scaled_2d = _scaler_lstm.transform(sequence_2d)
+        if isinstance(_scaler_lstm, _IdentityScaler):
+            return np.asarray(scaled_2d, dtype=np.float32).reshape(1, SEQUENCE_LENGTH, N_SEQUENCE_FEATURES)
     scaled = np.clip(np.asarray(scaled_2d, dtype=np.float32), 0.0, 1.0)
     return scaled.reshape(1, SEQUENCE_LENGTH, N_SEQUENCE_FEATURES)
 

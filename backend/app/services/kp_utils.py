@@ -235,7 +235,7 @@ class ShapAnalyzer:
         return {
             "horizon": horizon,
             "base_value": round(base_value, 2),
-            "predicted_kp": round(base_value + sum(shap_vals), 2),
+            "predicted_kp": round(float(base_value + float(np.sum(shap_vals))), 2),
             "top_features": features[:10],
             "all_features": features,
             "storm_drivers": [f for f in features if f["direction"] == "positive"][:5],

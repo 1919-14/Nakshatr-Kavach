@@ -1,10 +1,13 @@
 import React, { memo, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
 import { useStormStore } from "../../store/useStormStore";
-import { MOCK_ADVISORY } from "../../mock/mockData";
 import { getRiskColor } from "../../utils/riskColorMapper";
 import { SectionLabel } from "../ui/index";
 import { formatISTShort } from "../../utils/timeFormatter";
+import { normalizeAdvisory } from "../../utils/apiNormalize";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 // ── Typewriter hook ───────────────────────────────────────────────────────────
 function useTypewriter(text, speed = 18) {
@@ -116,10 +119,11 @@ function AdvisorySection({ section, active }) {
 
 // ── Advisory Panel ────────────────────────────────────────────────────────────
 export const AdvisoryPanel = memo(() => {
-  const { advisory }     = useStormStore();
-  const data             = advisory || MOCK_ADVISORY;
+  const { advisory, setAdvisory } = useStormStore();
+  const data             = advisory;
   const [hindi, setHindi]= useState(false);
   const [animKey, setAnimKey] = useState(0);
+  const [generating, setGenerating] = useState(false);
 
   // Re-trigger animation on new advisory
   useEffect(() => {
@@ -128,25 +132,66 @@ export const AdvisoryPanel = memo(() => {
 
   const handleExportPDF = async () => {
     try {
-      const { default: jsPDF }       = await import("jspdf");
-      const { default: html2canvas } = await import("html2canvas");
-      const el  = document.getElementById("advisory-content");
-      const canvas = await html2canvas(el, { backgroundColor: "#020817", scale: 2 });
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      pdf.setFontSize(16);
-      pdf.setTextColor("#00D4FF");
-      pdf.text("NAKSHATRA-KAVACH ADVISORY", 20, 20);
-      pdf.setFontSize(10);
-      pdf.setTextColor("#546E7A");
-      pdf.text(`Generated: ${formatISTShort(data.generated_at || new Date().toISOString())}`, 20, 28);
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 10, 35, 190, 0);
-      pdf.save("nakshatra-kavach-advisory.pdf");
+      const response = await axios.get(`${API_BASE}/api/advisory/export/pdf`, { responseType: "blob", timeout: 60000 });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "nakshatra-kavach-advisory.pdf";
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error("PDF export failed:", e);
     }
   };
 
+  const handleSMS = async () => {
+    try {
+      const { data: payload } = await axios.get(`${API_BASE}/api/advisory/export/sms`, { timeout: 30000 });
+      await navigator.clipboard?.writeText(payload.sms_text || "");
+      alert("SMS alert copied. Open SMSGate or your SMS client to send to the demo contact list.");
+    } catch (e) {
+      console.error("SMS export failed:", e);
+      alert("SMS export failed. Check backend /api/advisory/export/sms.");
+    }
+  };
+
+  const handleGenerateAdvisory = async () => {
+    setGenerating(true);
+    try {
+      const { data: generated } = await axios.post(
+        `${API_BASE}/api/advisory/generate`,
+        { trigger_type: "MANUAL_REFRESH", force: true },
+        { timeout: 120000 }
+      );
+      setAdvisory(normalizeAdvisory(generated));
+      setAnimKey(k => k + 1);
+    } catch (e) {
+      console.error("Groq advisory generation failed:", e);
+      const retryAfter = e.response?.headers?.["retry-after"] || e.response?.data?.retry_after_seconds;
+      const detail = e.response?.data?.error || e.message;
+      alert(retryAfter ? `Advisory refresh is rate limited. Retry in ${retryAfter}s.` : `Groq advisory generation failed: ${detail}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const isAI = data?.source === "AI_GENERATED" || data?.source === "LLM_GROQ";
+
+  if (!data) {
+    return (
+      <div style={{
+        background: "var(--color-bg-card)",
+        borderRadius: 12,
+        border: "1px solid rgba(0,212,255,0.12)",
+        padding: "18px",
+        color: "#607D8B",
+        fontSize: 12,
+      }}>
+        <SectionLabel>NAKSHATRA-KAVACH ADVISORY</SectionLabel>
+        <div style={{ marginTop: 10 }}>Waiting for live advisory generation from the backend.</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -192,16 +237,18 @@ export const AdvisoryPanel = memo(() => {
             {data?.generated_at ? formatISTShort(data.generated_at) : "--:--:-- IST"}
           </span>
           <button
-            onClick={() => setAnimKey(k => k + 1)}
+            onClick={handleGenerateAdvisory}
+            disabled={generating}
             style={{
               padding:    "4px 10px", borderRadius: 6,
               background: "rgba(0,212,255,0.08)",
               border:     "1px solid rgba(0,212,255,0.25)",
               color:      "#00D4FF", fontSize: 11, cursor: "pointer",
               fontFamily: "Space Grotesk, sans-serif",
+              opacity:    generating ? 0.65 : 1,
             }}
           >
-            ↺ Refresh
+            {generating ? "Generating..." : "Groq Refresh"}
           </button>
         </div>
       </div>
@@ -284,8 +331,8 @@ export const AdvisoryPanel = memo(() => {
       }}>
         {[
           { icon: "📋", label: "Export PDF",      onClick: handleExportPDF },
-          { icon: "📱", label: "WhatsApp Summary", onClick: () => {} },
-          { icon: "📧", label: "Email Alert",      onClick: () => {} },
+          { icon: "SMS", label: "SMS Alert",       onClick: handleSMS },
+          { icon: "📧", label: "Email Alert",     onClick: () => {} },
           { icon: "🔔", label: "Full Report →",    onClick: () => window.location.href = "/advisory" },
         ].map(btn => (
           <motion.button

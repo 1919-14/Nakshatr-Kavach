@@ -1,7 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStormStore } from "../store/useStormStore";
-import { MOCK_SATELLITES } from "../mock/mockData";
 import { getRiskColor, getRiskBg, getRiskLabel } from "../utils/riskColorMapper";
 import { CircularProgress, AnimatedBar, RiskLevelBadge, OrbitTypeBadge, CountdownTimer, SectionLabel } from "../components/ui/index";
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
@@ -43,7 +42,7 @@ function SatDetail({ sat }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
         <div style={{background:"var(--color-bg-card)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(0,212,255,0.1)"}}>
           <SectionLabel>Specifications</SectionLabel>
-          {[["Orbit",sat.type],["Altitude",`${sat.altitude?.toLocaleString()} km`],["Inclination",`${sat.inclination}°`],["Risk Score",`${sat.composite_risk}%`]].map(([l,v])=>(
+          {[["Orbit",sat.type],["Altitude",sat.altitude ? `${sat.altitude.toLocaleString()} km` : "Catalog"],["Inclination",sat.inclination !== undefined ? `${sat.inclination} deg` : "Catalog"],["Risk Score",`${sat.composite_risk}%`]].map(([l,v])=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12}}>
               <span style={{color:"#546E7A"}}>{l}</span>
               <span style={{color:"#90A4AE",fontSize:11}}>{v}</span>
@@ -74,15 +73,30 @@ function SatDetail({ sat }) {
 
 export default function Satellites() {
   const { satellites } = useStormStore();
+  const detailPanelRef = useRef(null);
   const sats = useMemo(()=>{
-    const base = satellites?.length ? satellites : MOCK_SATELLITES;
+    const base = satellites?.length ? satellites : [];
     return [...base].sort((a,b)=>b.composite_risk-a.composite_risk);
   },[satellites]);
   const [selected, setSelected] = useState(sats[0]?.id);
+  useEffect(() => {
+    if (!selected && sats[0]?.id) setSelected(sats[0].id);
+  }, [sats, selected]);
+
+  // Scroll detail panel to top whenever a new satellite is selected
+  useEffect(() => {
+    // Scroll the inner panel (fixed-height layout)
+    if (detailPanelRef.current) {
+      detailPanelRef.current.scrollTop = 0;
+    }
+    // Also scroll window in case layout overflows
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [selected]);
+
   const sat = sats.find(s=>s.id===selected);
 
   return (
-    <div style={{minHeight:"100vh",background:"var(--color-bg-primary)",paddingTop:74,display:"grid",gridTemplateColumns:"290px 1fr",fontFamily:"Space Grotesk,sans-serif"}}>
+    <div style={{height:"calc(100vh - 74px)",marginTop:74,background:"var(--color-bg-primary)",display:"grid",gridTemplateColumns:"290px 1fr",fontFamily:"Space Grotesk,sans-serif",overflow:"hidden"}}>
       <div style={{background:"var(--color-bg-secondary)",borderRight:"1px solid rgba(0,212,255,0.1)",overflowY:"auto",padding:"16px 12px"}}>
         <div style={{fontFamily:"Orbitron,sans-serif",fontSize:9,color:"#00D4FF",letterSpacing:"0.14em",marginBottom:12}}>ISRO SATELLITE FLEET</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:14}}>
@@ -98,26 +112,34 @@ export default function Satellites() {
           const active=selected===s.id;
           return (
             <motion.div key={s.id} onClick={()=>setSelected(s.id)}
-              initial={{opacity:0,x:-10}} animate={{opacity:1,x:0}} transition={{delay:i*0.04}}
-              style={{padding:"10px 12px",borderRadius:8,marginBottom:5,cursor:"pointer",
+              initial={{opacity:0,x:-10}} animate={{opacity:1,x:0}} 
+              whileHover={{ scale: 1.015, x: 2, background: active ? getRiskBg(s.composite_risk) : "rgba(255,255,255,0.03)" }}
+              transition={{delay:Math.min(i, 16)*0.02, duration:0.2}}
+              style={{padding:"10px 12px",borderRadius:8,marginBottom:6,cursor:"pointer",
                 background:active?getRiskBg(s.composite_risk):"transparent",
-                border:`1px solid ${active?c+"55":"transparent"}`,
-                borderLeft:`3px solid ${c}`,transition:"all 0.2s"}}>
+                border:`1px solid ${active?c+"66":"rgba(255,255,255,0.05)"}`,
+                borderLeft:`4px solid ${active?c:c+"88"}`,
+                boxShadow: active ? `0 4px 12px rgba(0,0,0,0.2)` : 'none' }}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{fontWeight:600,fontSize:12,color:active?"#fff":"#E8F4FD"}}>{s.name}</span>
+                <span style={{fontWeight:active?700:500,fontSize:13,letterSpacing:"0.02em",color:active?"#fff":"#E8F4FD",fontFamily:"Space Grotesk,sans-serif"}}>{s.name}</span>
                 <OrbitTypeBadge type={s.type} />
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:10,color:"#546E7A",fontFamily:"JetBrains Mono,monospace"}}>{s.altitude?.toLocaleString()} km</span>
+                <span style={{fontSize:10,color:"#607D8B",fontFamily:"JetBrains Mono,monospace"}}>{s.altitude ? `${s.altitude.toLocaleString()} km` : "Catalog"}</span>
                 <RiskLevelBadge score={s.composite_risk} />
               </div>
-              <div style={{marginTop:5,height:2,background:"rgba(255,255,255,0.06)",borderRadius:1}}>
+              <div style={{marginTop:8,height:3,background:"rgba(255,255,255,0.06)",borderRadius:2}}>
                 <motion.div initial={{width:0}} animate={{width:`${s.composite_risk}%`}} transition={{duration:0.8,delay:i*0.05}}
-                  style={{height:"100%",background:c,borderRadius:1}} />
+                  style={{height:"100%",background:c,borderRadius:2}} />
               </div>
             </motion.div>
           );
         })}
+        {!sats.length && (
+          <div style={{color:"#607D8B",fontSize:12,padding:"12px 4px"}}>
+            Waiting for live satellite catalog.
+          </div>
+        )}
         <div style={{marginTop:16}}>
           <SectionLabel>Fleet Comparison</SectionLabel>
           <ResponsiveContainer width="100%" height={140}>
@@ -133,7 +155,7 @@ export default function Satellites() {
           </ResponsiveContainer>
         </div>
       </div>
-      <div style={{overflowY:"auto",padding:"20px 24px"}}>
+      <div ref={detailPanelRef} style={{overflowY:"auto",padding:"20px 24px"}}>
         <AnimatePresence mode="wait">
           {sat && <SatDetail key={sat.id} sat={sat} />}
         </AnimatePresence>

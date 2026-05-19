@@ -1,26 +1,50 @@
-import { format, addMinutes } from "date-fns";
-
-// Always display IST = UTC + 5:30
-export function toIST(utcDateStr) {
-  const d = new Date(utcDateStr);
-  const ist = addMinutes(d, 330);
-  return ist;
+function asDate(value) {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-export function formatIST(utcDateStr, fmt = "dd MMM yyyy HH:mm:ss") {
-  return format(toIST(utcDateStr), fmt) + " IST";
+function formatInIST(value, options) {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    ...options,
+  }).format(asDate(value));
+}
+
+export function toIST(utcDateStr) {
+  return asDate(utcDateStr);
+}
+
+export function formatIST(utcDateStr) {
+  return `${formatInIST(utcDateStr, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })} IST`;
 }
 
 export function formatISTShort(utcDateStr) {
-  return format(toIST(utcDateStr), "HH:mm:ss") + " IST";
+  return `${formatInIST(utcDateStr, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })} IST`;
 }
 
 export function formatISTDate(utcDateStr) {
-  return format(toIST(utcDateStr), "dd MMM yyyy");
+  return formatInIST(utcDateStr, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export function nowIST() {
-  return format(addMinutes(new Date(), 330), "HH:mm:ss") + " IST";
+  return formatISTShort(new Date());
 }
 
 export function formatCountdown(totalSeconds) {
@@ -32,6 +56,6 @@ export function formatCountdown(totalSeconds) {
 }
 
 export function formatINR(crore) {
-  if (crore >= 100) return `₹${(crore/100).toFixed(1)}B`;
-  return `₹${crore}Cr`;
+  if (crore >= 100) return `Rs ${(crore/100).toFixed(1)}B`;
+  return `Rs ${crore}Cr`;
 }

@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { useStormStore } from "../../store/useStormStore";
 import { StormClassBadge, StatusDot } from "../ui/index";
 import { useNowIST } from "../../hooks/index";
-import { formatCountdown } from "../../utils/timeFormatter";
 
 const NAV_LINKS = [
   { path: "/",           label: "Dashboard"  },
@@ -30,11 +29,16 @@ const Logo = () => (
 
 export const NavBar = memo(() => {
   const { pathname } = useLocation();
-  const { solarWind, kpForecast, systemStatus } = useStormStore();
+  const { solarWind, kpForecast, systemStatus, replayMode, replayStormName } = useStormStore();
   const nowIST  = useNowIST();
-  const kp      = solarWind?.kp_current ?? 0;
-  const arrival = kpForecast?.peak_arrival_minutes ?? null;
-  const arrivalSecs = arrival ? arrival * 60 : null;
+  const asNum = (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  const kpCurrent = asNum(solarWind?.kp_current);
+  const kp3h = asNum(kpForecast?.kp_3hr?.value);
+  const badgeKp = kpCurrent ?? kp3h ?? 0;
 
   return (
     <motion.nav
@@ -83,43 +87,53 @@ export const NavBar = memo(() => {
         flex: 1, display: "flex", alignItems: "center",
         justifyContent: "center", gap: 14,
       }}>
-        <StormClassBadge kp={kp} />
-        <div style={{
-          fontFamily: "Orbitron, sans-serif",
-          fontSize:   22, fontWeight: 800,
-          color:      "#FFD700",
-          letterSpacing: "0.04em",
-          textShadow: "0 0 16px rgba(255,215,0,0.5)",
-        }}>
-          Kp {kp.toFixed(1)}
+        <StormClassBadge kp={badgeKp} />
+        {replayMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              padding: "5px 11px",
+              borderRadius: 999,
+              background: "rgba(255,152,0,0.18)",
+              border: "1px solid rgba(255,152,0,0.55)",
+              color: "#FFB74D",
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: 10,
+              fontWeight: 800,
+              maxWidth: 220,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={replayStormName || "Historical replay active"}
+          >
+            REPLAY{replayStormName ? `: ${replayStormName}` : ""}
+          </motion.div>
+        )}
+        <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+          <div style={{
+            fontFamily: "Orbitron, sans-serif",
+            fontSize:   20, fontWeight: 800,
+            color:      "#FFD700",
+            letterSpacing: "0.04em",
+            textShadow: "0 0 16px rgba(255,215,0,0.5)",
+          }}>
+            Kp Current {kpCurrent === null ? "--" : kpCurrent.toFixed(1)}
+          </div>
+          <div style={{
+            fontFamily:"JetBrains Mono, monospace",
+            fontSize:11,
+            color:"#00D4FF",
+            whiteSpace:"nowrap",
+          }}>
+            +3h {kp3h === null ? "--" : kp3h.toFixed(1)}
+          </div>
         </div>
       </div>
 
-      {/* ── RIGHT: Countdown + status + time + nav ── */}
+      {/* ── RIGHT: status + time + nav ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
-
-        {/* Storm arrival countdown */}
-        {arrivalSecs && (
-          <motion.div
-            animate={{ opacity: [1, 0.7, 1] }}
-            transition={{ duration: 1, repeat: Infinity }}
-            style={{
-              display:      "flex",
-              alignItems:   "center",
-              gap:          6,
-              padding:      "5px 12px",
-              borderRadius: 999,
-              background:   "rgba(244,67,54,0.15)",
-              border:       "1.5px solid rgba(244,67,54,0.6)",
-              color:        "#F44336",
-              fontFamily:   "Orbitron, sans-serif",
-              fontSize:     11, fontWeight: 700,
-            }}
-          >
-            <span>⚡</span>
-            <span>IMPACT IN {formatCountdown(arrivalSecs)}</span>
-          </motion.div>
-        )}
 
         {/* System status dots */}
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>

@@ -6,6 +6,7 @@ Orchestrates fetch → validate → snapshot update → DB persist pipeline.
 This is the contract surface for all downstream layers (Layer 2+).
 """
 
+import copy
 import logging
 import threading
 from datetime import datetime
@@ -52,11 +53,22 @@ from app.utils.formatters import data_age_seconds, parse_utc_timestamp, utcnow_i
 
 logger = logging.getLogger(__name__)
 
+
+def _as_float(value: Any) -> Optional[float]:
+    """Return a numeric value when upstream APIs send numbers as strings."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 # ─────────────────────────────────────────────────────────────────
 # THREAD-SAFE LATEST SNAPSHOT
 # ─────────────────────────────────────────────────────────────────
 
 _snapshot_lock = threading.RLock()
+_SNAPSHOT_BACKUP: Optional[Dict[str, Any]] = None
 
 LATEST_SNAPSHOT: Dict[str, Any] = {
     "last_updated_utc": None,
@@ -127,6 +139,35 @@ def get_snapshot() -> Dict[str, Any]:
         return dict(LATEST_SNAPSHOT)
 
 
+def _temporarily_set_snapshot(snapshot: Dict[str, Any]) -> None:
+    """
+    Atomically swap LATEST_SNAPSHOT for a replay snapshot.
+
+    The replay engine must preserve live data exactly while historical frames
+    pass through Layers 2-6. A deep copy is required because the snapshot has
+    nested dictionaries and downstream code may mutate nested sections.
+    """
+    global LATEST_SNAPSHOT, _SNAPSHOT_BACKUP
+    with _snapshot_lock:
+        if _SNAPSHOT_BACKUP is None:
+            _SNAPSHOT_BACKUP = copy.deepcopy(LATEST_SNAPSHOT)
+        LATEST_SNAPSHOT = copy.deepcopy(snapshot)
+
+
+def _restore_snapshot() -> None:
+    """
+    Restore the pre-replay LATEST_SNAPSHOT atomically.
+
+    This function is intentionally idempotent so callers can use it freely in
+    finally blocks even if frame processing failed before the swap completed.
+    """
+    global LATEST_SNAPSHOT, _SNAPSHOT_BACKUP
+    with _snapshot_lock:
+        if _SNAPSHOT_BACKUP is not None:
+            LATEST_SNAPSHOT = copy.deepcopy(_SNAPSHOT_BACKUP)
+            _SNAPSHOT_BACKUP = None
+
+
 # ─────────────────────────────────────────────────────────────────
 # COMPUTED SNAPSHOT FIELDS
 # ─────────────────────────────────────────────────────────────────
@@ -139,9 +180,9 @@ def _compute_storm_imminent() -> bool:
         True if any storm-imminent condition is met.
     """
     with _snapshot_lock:
-        bz = LATEST_SNAPSHOT["solar_wind"].get("bz_gsm")
-        speed = LATEST_SNAPSHOT["solar_wind"].get("sw_speed_kmps")
-        kp = LATEST_SNAPSHOT["kp"].get("kp_current")
+        bz = _as_float(LATEST_SNAPSHOT["solar_wind"].get("bz_gsm"))
+        speed = _as_float(LATEST_SNAPSHOT["solar_wind"].get("sw_speed_kmps"))
+        kp = _as_float(LATEST_SNAPSHOT["kp"].get("kp_current"))
         cme_directed = LATEST_SNAPSHOT["cme"].get("earth_directed", False)
         cme_minutes = LATEST_SNAPSHOT["cme"].get("arrival_minutes_from_now")
         alert_class = LATEST_SNAPSHOT["alert"].get("latest_official_class")
@@ -168,8 +209,8 @@ def _compute_recommended_action() -> str:
     """
     with _snapshot_lock:
         risk = LATEST_SNAPSHOT["solar_wind"].get("storm_onset_risk", QUALITY_UNKNOWN)
-        kp = LATEST_SNAPSHOT["kp"].get("kp_current")
-        bz = LATEST_SNAPSHOT["solar_wind"].get("bz_gsm")
+        kp = _as_float(LATEST_SNAPSHOT["kp"].get("kp_current"))
+        bz = _as_float(LATEST_SNAPSHOT["solar_wind"].get("bz_gsm"))
         storm_imminent = LATEST_SNAPSHOT["computed"].get("storm_imminent", False)
 
     if kp is not None and kp >= ACT_NOW_KP_THRESHOLD:
@@ -208,6 +249,9 @@ def update_snapshot_solar_wind(record: Dict[str, Any]) -> None:
             "bz_southward_flag":    record.get("bz_southward_flag", 0),
             "storm_onset_risk":     record.get("storm_onset_risk", QUALITY_UNKNOWN),
             "source_dscovr_active": record.get("source_dscovr_active", 0),
+            "data_source":           record.get("source"),
+            "wind_time_tag":         record.get("wind_time_tag"),
+            "mag_time_tag":          record.get("mag_time_tag"),
         })
         LATEST_SNAPSHOT["last_updated_utc"] = now_iso
         LATEST_SNAPSHOT["data_quality"] = record.get("data_quality_flag", QUALITY_UNKNOWN)
@@ -243,7 +287,7 @@ def update_snapshot_kp(raw_kp: Dict[str, Any]) -> None:
     Args:
         raw_kp: Dict from NOAA Kp endpoint (last array item).
     """
-    kp_val = raw_kp.get("kp")
+    kp_val = _as_float(raw_kp.get("kp"))
     kp_index = raw_kp.get("kp_index")
     kp_status = raw_kp.get("status", "UNKNOWN")
     ts = raw_kp.get("time_tag")
