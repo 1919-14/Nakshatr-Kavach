@@ -18,7 +18,7 @@
 ![Flask](https://img.shields.io/badge/Flask-3.x-000000?style=for-the-badge&logo=flask&logoColor=white)
 ![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Three.js](https://img.shields.io/badge/Three.js-r155+-000000?style=for-the-badge&logo=threedotjs&logoColor=white)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 ![XGBoost](https://img.shields.io/badge/XGBoost-2.x-026E00?style=for-the-badge)
 
 <br/>
@@ -122,8 +122,9 @@ The DSCOVR spacecraft at the L1 Lagrange point gives us a **45-60 minute physica
            |  Bz duration · Epsilon coupling · Solar wind pressure
            |  Rolling windows (30min / 1hr / 3hr / 6hr) · CME metadata
 
- LAYER 3  |  Kp Prediction Engine — XGBoost + LSTM Hybrid
+ LAYER 3  |  Kp Prediction Engine — XGBoost-dominant Hybrid
            |  3hr → 6hr → 12hr → 24hr forecast
+           |  Fusion weights: XGB 92/90/88/85% · LSTM 8/10/12/15%
            |  Monte Carlo Dropout → calibrated uncertainty bounds
 
  LAYER 4  |  Satellite Vulnerability Scoring
@@ -137,7 +138,7 @@ The DSCOVR spacecraft at the L1 Lagrange point gives us a **45-60 minute physica
            |  GIC amplitude · Transformer damage probability · Rs impact
 
  LAYER 6  |  LLM Mission Control Advisory
-           |  Groq LLaMA-3.3-70B · ISRO/NDMA communication style
+           |  Groq LLaMA-4-Scout-17B · ISRO/NDMA communication style
            |  Per-satellite actions · Timeline · Hindi summary
            |  Rule-based fallback for 100% uptime
 
@@ -165,7 +166,7 @@ WebGL-powered Earth globe (NASA Blue Marble textures), live satellite orbit trac
 <td width="50%" valign="top">
 
 ### ⚡ Hybrid ML Kp Prediction
-XGBoost for 3-6hr tabular prediction, LSTM for 3-24hr temporal sequence modeling, Monte Carlo Dropout for calibrated confidence intervals, SHAP explainability panel for feature importance, validated on May 2024 G5 storm holdout data.
+XGBoost-dominant fusion across all horizons (92% at 3hr → 85% at 24hr) because LSTM operates on degraded 15/72-feature input at real-time inference. Monte Carlo Dropout provides calibrated uncertainty bounds. TreeSHAP explainability panel with per-sample feature attribution. Validated on May 2024 G5 storm holdout data.
 
 </td>
 </tr>
@@ -186,14 +187,14 @@ Interactive Leaflet map with EHV corridor overlays, GIC amplitude estimation per
 <tr>
 <td width="50%" valign="top">
 
-### 🤖 LLM Mission Advisory (Groq + LLaMA-3)
-ISRO ISTRAC-style operational advisories with per-satellite action items and T-minus deadlines, Hindi translation for field operator distribution, typewriter animation on delivery, PDF export in NDMA report format.
+### 🤖 LLM Mission Advisory & Self-Explaining Chatbot
+ISRO ISTRAC-style operational advisories with per-satellite action items and T-minus deadlines. Replay-aware: when a storm replay is active, advisory and chatbot ingest the historical replay frame context. Hindi translation for field operators, typewriter animation on delivery, PDF export in NDMA report format. Includes an integrated conversational AI chatbot.
 
 </td>
 <td width="50%" valign="top">
 
 ### 🎬 Historical Storm Replay Theatre
-Replay any past storm through the full pipeline. 1989 Quebec, 2003 Halloween, 2024 G5 pre-loaded. Media player controls with 1x/60x/3600x speed. The entire dashboard responds to historical data stream in real time.
+Replay any past storm through the full pipeline. 1989 Quebec, 2003 Halloween, 2022 Starlink loss, 2024 G5 pre-loaded. Seamless storm switching (auto-stops active session on new load). Media player controls with 1x/60x/3600x speed. Advisory, SHAP drivers, and chatbot all contextually ingest the active replay frame instead of live telemetry.
 
 </td>
 </tr>
@@ -208,6 +209,20 @@ Full-screen storm detection overlay with GSAP animation sequence, progressive vi
 
 ### 🌡️ Live Solar Telemetry Strip
 6 real-time metric cards: Bz · Bt · Speed · Density · Kp · X-Ray. Animated sparklines showing last 60 readings. Threshold-based card border glow. Smooth number animation on every value change.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🗣️ Conversational AI Chatbot
+Integrated replay-aware space-weather chatbot supporting continuous stream responses. Handles operational queries, safe-mode execution status, and historical comparisons. Operators can chat naturally to get immediate advisory explanations in English and Hindi.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧠 Multi-Layer Self-Explaining System
+Every analytical section (TreeSHAP drivers, satellite charging, drag metrics, and Indian EHV power grid risk) is fully self-explainable in English and Hindi. Operators can request plain-language explanations of complex physical coupling factors and ML attributions on demand.
 
 </td>
 </tr>
@@ -288,7 +303,7 @@ Full-screen storm detection overlay with GSAP animation sequence, progressive vi
 
 | Library | Purpose |
 |---------|---------|
-| TensorFlow / Keras | LSTM sequence model (24hr Kp prediction) |
+| PyTorch 2.x | LSTM sequence model (3–24hr Kp prediction, Monte Carlo Dropout) |
 | XGBoost | Short-term Kp regression (3-6hr) |
 | scikit-learn | Preprocessing, TimeSeriesSplit CV |
 | SHAP | ML prediction explainability |
@@ -411,104 +426,159 @@ nakshatra-kavach/
 │
 ├── backend/
 │   ├── app/
+│   │   ├── data/
+│   │   │   ├── historical/             # Cached historical telemetry records
+│   │   │   ├── historical_storms/      # Pre-built storm replay JSON datasets
+│   │   │   ├── storms/                 # Storm catalog metadata
+│   │   │   └── generate_catalog.py     # Rebuilds storm catalog index
 │   │   ├── database/
-│   │   │   └── db.py               # SQLite database setup and connection pool
+│   │   │   ├── db.py                   # SQLite/PostgreSQL connection pool
+│   │   │   └── schema.sql              # Database schema definitions
+│   │   ├── ml_models/                  # Runtime ML artifact directory (.gitkeep)
 │   │   ├── models/
-│   │   │   ├── lstm_kp_model.pt    # Serialized PyTorch LSTM model weights
-│   │   │   ├── lstm_scaler.pkl     # Standard scaler for LSTM sequences
-│   │   │   ├── shap_xgb_*.pkl      # Saved SHAP explainers per forecast horizon
-│   │   │   ├── xgb_kp_*.json       # Serialized XGBoost models (3hr, 6hr, 12hr, 24hr)
-│   │   │   └── xgb_scaler.pkl      # Standard scaler for XGBoost feature vectors
+│   │   │   ├── lstm_kp_model.pt        # Serialized PyTorch LSTM model weights
+│   │   │   ├── lstm_scaler.pkl         # Standard scaler for LSTM input sequences
+│   │   │   ├── shap_xgb_3hr.pkl        # TreeSHAP explainer for 3hr XGBoost model
+│   │   │   ├── shap_xgb_6hr.pkl        # TreeSHAP explainer for 6hr XGBoost model
+│   │   │   ├── shap_xgb_12hr.pkl       # TreeSHAP explainer for 12hr XGBoost model
+│   │   │   ├── shap_xgb_24hr.pkl       # TreeSHAP explainer for 24hr XGBoost model
+│   │   │   ├── xgb_kp_3hr.json         # Serialized XGBoost 3hr Kp model
+│   │   │   ├── xgb_kp_6hr.json         # Serialized XGBoost 6hr Kp model
+│   │   │   ├── xgb_kp_12hr.json        # Serialized XGBoost 12hr Kp model
+│   │   │   ├── xgb_kp_24hr.json        # Serialized XGBoost 24hr Kp model
+│   │   │   └── xgb_scaler.pkl          # Standard scaler for XGBoost feature vectors
 │   │   ├── routes/
-│   │   │   ├── advisory.py         # LLM & rule-based advisories, SHAP explainers & chat routes
-│   │   │   ├── features.py         # Feature inspection REST routes
-│   │   │   ├── grid.py             # Indian power grid GIC corridor scoring API
-│   │   │   ├── kp_forecast.py      # Kp forecast predictions & TreeSHAP driver API
-│   │   │   ├── replay.py           # Historical storm catalog and playback control endpoints
-│   │   │   ├── satellites.py       # Satellite orbital data & individual scoring API
-│   │   │   └── solar.py            # Live telemetry retrieval & status routes
+│   │   │   ├── advisory.py             # LLM & rule-based advisories, SHAP & chat routes
+│   │   │   ├── features.py             # Feature inspection REST routes
+│   │   │   ├── grid.py                 # India power grid GIC corridor scoring API
+│   │   │   ├── kp_forecast.py          # Kp forecast, /shap (replay-aware), /storm-probability, /validate
+│   │   │   ├── replay.py               # Storm catalog & playback endpoints (auto-stop on load)
+│   │   │   ├── satellites.py           # Satellite orbital data & risk scoring API
+│   │   │   └── solar.py                # Live telemetry retrieval & status routes
 │   │   ├── services/
-│   │   │   ├── advisory_generator.py # Advisory compiler, Groq API interface & rule fallback
-│   │   │   ├── data_ingestion.py   # Live solar wind and GOES telemetry scheduling
-│   │   │   ├── feature_engineering.py # Layer 2: 45 real-time physics feature extractor
-│   │   │   ├── fetchers.py         # Thread-safe async NOAA/NASA data retrievers
-│   │   │   ├── grid_risk_engine.py  # Layer 5: India power corridor risk scoring
-│   │   │   ├── ingestion_service.py # Core telemetry cache orchestrator
-│   │   │   ├── kp_predictor.py     # Layer 3: XGBoost + PyTorch LSTM predictor
-│   │   │   ├── kp_utils.py         # Physics conversions and storm thresholds
-│   │   │   ├── llm_advisory.py     # System prompts and LLM validation wrapper
-│   │   │   ├── physics.py          # Magnetospheric formulas & energy coupling calculations
-│   │   │   ├── pipeline.py         # Master pipeline executor (Layer 1 to Layer 6)
-│   │   │   ├── replay_engine.py    # Layer 7: Historical storm playback & interpolation
-│   │   │   ├── satellite_scorer.py  # Layer 4: Satellite radiation/drag scoring
-│   │   │   ├── storm_alert.py      # Threat level categorization and active watch flags
-│   │   │   └── validators.py       # NOAA and telemetry format validators
+│   │   │   ├── advisory_generator.py   # Advisory compiler, Groq API & rule-based fallback
+│   │   │   ├── data_ingestion.py       # Live solar wind and GOES telemetry scheduling
+│   │   │   ├── feature_engineering.py  # Layer 2: 45-feature real-time physics extractor
+│   │   │   ├── fetchers.py             # Thread-safe async NOAA/NASA data retrievers
+│   │   │   ├── grid_risk_engine.py     # Layer 5: India EHV corridor GIC risk scoring
+│   │   │   ├── ingestion_service.py    # Core telemetry cache orchestrator
+│   │   │   ├── kp_predictor.py         # Layer 3: XGBoost + PyTorch LSTM hybrid predictor
+│   │   │   ├── kp_utils.py             # Physics conversions and storm thresholds
+│   │   │   ├── llm_advisory.py         # System prompts and LLM validation wrapper
+│   │   │   ├── physics.py              # Magnetospheric formulas & energy coupling math
+│   │   │   ├── pipeline.py             # Master pipeline executor (Layers 1-6)
+│   │   │   ├── replay_engine.py        # Layer 7: Storm playback, frame cache & PipelineInjector
+│   │   │   ├── satellite_scorer.py     # Layer 4: Satellite drag / charging / SEU scorer
+│   │   │   ├── storm_alert.py          # Threat level categorization & watch flags
+│   │   │   └── validators.py           # NOAA and telemetry format validators
 │   │   ├── utils/
-│   │   │   └── constants.py        # Shared thresholds, model weights, intervals, and paths
-│   │   ├── config.py               # Application configurations
-│   │   ├── routes.py               # Master blueprint registration
-│   │   ├── create_scaler.py        # Helper to generate feature scaler pickles
-│   │   ├── create_shap_explainers.py # TreeSHAP initialization builder
-│   │   └── realtime.py             # WebSocket message pusher
-│   ├── run.py                      # Flask Application entry point (REST & Socket.IO server)
-│   └── requirements.txt            # Backend dependencies
+│   │   │   ├── constants.py            # Fusion weights, thresholds, intervals, model paths
+│   │   │   └── formatters.py           # Output formatting helpers
+│   │   ├── config.py                   # Application configuration loader
+│   │   ├── create_scaler.py            # Generates & saves XGBoost / LSTM scaler pickles
+│   │   ├── create_shap_explainers.py   # TreeSHAP explainer initialization & serialization
+│   │   ├── db.py                       # Top-level DB accessor shim
+│   │   ├── realtime.py                 # WebSocket message pusher (Socket.IO emitter)
+│   │   └── routes.py                   # Master Flask blueprint registration
+│   ├── config.py                       # Backend-level environment & secret configuration
+│   ├── conftest.py                     # Pytest fixtures and shared test setup
+│   ├── pytest.ini                      # Pytest configuration
+│   ├── run.py                          # Flask app entry point (REST & Socket.IO server)
+│   ├── scheduler.py                    # APScheduler background task definitions
+│   ├── socketio_events.py              # Socket.IO event handlers for real-time push
+│   ├── requirements.txt                # Backend Python dependencies
+│   └── tests/
+│       ├── test_layer1.py              # Data ingestion & NOAA fetcher tests
+│       ├── test_layer2.py              # Feature engineering pipeline tests
+│       ├── test_layer3.py              # Kp prediction model & fusion weight tests
+│       ├── test_layer4.py              # Satellite scorer tests
+│       ├── test_layer5.py              # Grid GIC engine tests
+│       ├── test_layer6.py              # Advisory generator tests
+│       └── test_layer7.py              # Replay engine tests
 │
 ├── frontend/
 │   ├── public/
-│   │   └── textures/               # Globe rendering textures (NASA Blue Marble)
+│   │   └── textures/                   # Globe rendering textures (NASA Blue Marble)
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── advisory/           # Live & LLM advisory displays
-│   │   │   ├── alerts/             # Edge alert glows & screen overlays
-│   │   │   ├── chat/               # Conversational space weather AI assistant
-│   │   │   ├── earth/              # WebGL 3D Globe, orbit tracks, and CME cone
-│   │   │   ├── forecast/           # Kp forecast charts & TreeSHAP driver indicators
-│   │   │   ├── grid/               # Indian GIC corridor transmission map
-│   │   │   ├── layout/             # Master navigation & status panels
-│   │   │   ├── satellites/         # Satellite vulnerability lists and risk cards
-│   │   │   ├── solar/              # Real-time solar wind sparkline grid
-│   │   │   └── ui/                 # Reusable UI layout elements
+│   │   │   ├── advisory/
+│   │   │   │   ├── AdvisoryPanel.jsx   # Live & LLM advisory display panel
+│   │   │   │   └── index.jsx           # Advisory module barrel export
+│   │   │   ├── alerts/
+│   │   │   │   └── index.jsx           # Edge glow & full-screen storm alert overlay
+│   │   │   ├── chat/
+│   │   │   │   └── ContextChatbot.jsx  # Replay-aware conversational AI assistant
+│   │   │   ├── earth/
+│   │   │   │   ├── EarthGlobe.jsx      # Main R3F scene wrapper & camera controls
+│   │   │   │   ├── EarthMesh.jsx       # WebGL Earth sphere (NASA Blue Marble textures)
+│   │   │   │   ├── MagneticField.jsx   # Animated magnetic field line visualizer
+│   │   │   │   ├── orbitalData.js      # Orbital shell definitions per satellite tier
+│   │   │   │   ├── propagation.js      # TLE to ECI to screen-space position math
+│   │   │   │   ├── SatelliteOrbit.jsx  # Individual satellite orbit track renderer
+│   │   │   │   ├── ShockwaveRing.jsx   # CME shockwave ring animation
+│   │   │   │   ├── StormCone.jsx       # CME approach cone geometry & animation
+│   │   │   │   └── tleData.js          # Bundled ISRO satellite TLE elements
+│   │   │   ├── forecast/
+│   │   │   │   ├── KpForecastChart.jsx       # Recharts Kp timeline with uncertainty bands
+│   │   │   │   ├── KpPredictionCards.jsx     # 3/6/12/24hr storm class summary cards
+│   │   │   │   ├── ShapExplainPanel.jsx      # TreeSHAP driver strip (replay-gated)
+│   │   │   │   └── StormProbabilityGauge.jsx # Radial storm probability gauge
+│   │   │   ├── grid/
+│   │   │   │   └── IndiaGridMap.jsx    # Interactive Leaflet GIC corridor risk map
+│   │   │   ├── layout/
+│   │   │   │   └── NavBar.jsx          # Top navigation bar & system status indicators
+│   │   │   ├── satellites/
+│   │   │   │   └── SatelliteRiskPanel.jsx  # Satellite vulnerability list & risk cards
+│   │   │   ├── solar/
+│   │   │   │   └── SolarTelemetryStrip.jsx # Live Bz/Bt/Speed/Density/Kp/XRay strip
+│   │   │   └── ui/
+│   │   │       ├── index.jsx           # Reusable UI primitives (Card, Badge, etc.)
+│   │   │       └── LoadingScreen.jsx   # Animated boot splash screen
 │   │   ├── hooks/
-│   │   │   └── index.js            # Unified custom query & socket event listener hooks
+│   │   │   └── index.js                # TanStack Query & Socket.IO hooks (replay-gated)
 │   │   ├── mock/
-│   │   │   └── mockData.js         # Offline mode fallback telemetry data
+│   │   │   └── mockData.js             # Offline mode fallback telemetry data
 │   │   ├── pages/
-│   │   │   ├── Dashboard.jsx       # Operational control panel
-│   │   │   ├── Advisory.jsx        # Advisory report viewer
-│   │   │   ├── GridMap.jsx         # India grid analysis page
-│   │   │   ├── Replay.jsx          # Replay Theatre view
-│   │   │   ├── Satellites.jsx      # Satellite fleet vulnerability panel
-│   │   │   └── StormSim.jsx        # Scenario simulator timeline
+│   │   │   ├── Advisory.jsx            # Advisory report viewer page
+│   │   │   ├── Dashboard.jsx           # Operational mission control panel
+│   │   │   ├── GridMap.jsx             # India grid GIC analysis page
+│   │   │   ├── Replay.jsx              # Historical storm replay theatre
+│   │   │   ├── Satellites.jsx          # Satellite fleet vulnerability panel
+│   │   │   └── StormSim.jsx            # Scenario simulator with timeline scrubber
 │   │   ├── store/
-│   │   │   └── useStormStore.js    # Zustand unified front-end global state store
+│   │   │   └── useStormStore.js        # Zustand global state (replay mode, SHAP, telemetry)
 │   │   ├── utils/
-│   │   │   └── apiNormalize.js     # Data sanitizers for backend REST payloads
-│   │   ├── App.jsx                 # Client entry component
-│   │   ├── index.css               # Main visual layout & CSS variables
-│   │   └── main.jsx                # DOM mounting entry
+│   │   │   ├── apiNormalize.js         # Data sanitizers for backend REST payloads
+│   │   │   ├── riskColorMapper.js      # Risk score to colour token mapper
+│   │   │   ├── stormClassifier.js      # Kp to G-scale storm class helper
+│   │   │   └── timeFormatter.js        # UTC / IST timestamp formatters
+│   │   ├── App.jsx                     # Client entry component & route definitions
+│   │   ├── index.css                   # Global styles & CSS design tokens
+│   │   └── main.jsx                    # ReactDOM mounting entry
 │   ├── package.json
+│   ├── tailwind.config.js
 │   └── vite.config.js
 │
 ├── ml_training/
 │   ├── notebooks/
-│   │   ├── EDA_solar_wind.ipynb
-│   │   └── May2024_storm_validation.ipynb
-│   ├── 02_feature_engineering.py   # Prep historical records to Layer-2 schema
-│   ├── 03_train_xgboost.py         # Trains the 4 XGBoost prediction models
-│   ├── 04_train_lstm.py            # Trains the PyTorch LSTM recurrent sequence model
-│   ├── 05_evaluate_models.py       # Compiles prediction errors & outputs model reports
-│   ├── download_historical_storms.py # Fetches historical NOAA geomagnetic storms
-│   ├── evaluation_report.json      # Stored performance metric exports
-│   └── logs/                       # ML run output logs
+│   │   └── EDA_solar_wind.ipynb        # EDA on historical OMNI solar wind dataset
+│   ├── 02_feature_engineering.py       # Build Layer-2 45-feature schema from OMNI data
+│   ├── 03_train_xgboost.py             # Train 4 XGBoost Kp models (3/6/12/24hr)
+│   ├── 04_train_lstm.py                # Train PyTorch LSTM + save lstm_scaler.pkl
+│   ├── 05_evaluate_models.py           # RMSE/MAE metrics & model evaluation report
+│   ├── download_historical_storms.py   # Fetch historical NOAA geomagnetic storm data
+│   └── evaluation_report.json          # Stored model performance metric exports
 │
 ├── download_data/
-│   ├── build_training_dataset.py   # Synthesizes solar and Kp tables
-│   ├── download_all.py             # Scripted downloader for NOAA datasets
-│   ├── setup_and_download.bat      # Environment setup utility script
-│   └── requirements.txt            # Ingestion-specific requirements
+│   ├── build_training_dataset.py       # Synthesizes OMNI solar wind & Kp index tables
+│   ├── download_all.py                 # Bulk downloader for NOAA/NASA datasets
+│   ├── setup_and_download.bat          # One-click environment setup & dataset download
+│   └── requirements.txt               # Data ingestion-specific Python dependencies
 │
-├── run_nakshatra.bat               # Windows orchestration one-click service launcher
-└── README.md                       # Comprehensive space intelligence developer manual
+├── docs/                               # Architecture diagrams & supplementary docs
+├── CLAUDE.md                           # AI assistant context & development conventions
+├── run_nakshatra.bat                   # Windows one-click backend + frontend launcher
+└── README.md                           # Comprehensive space intelligence developer manual
 ```
 
 ---
@@ -603,17 +673,26 @@ npm run dev
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/solar/live` | Current solar wind parameters |
-| `GET` | `/api/kp/forecast` | Kp predictions (3/6/12/24hr) with uncertainty |
+| `GET` | `/api/solar/live` | Current solar wind parameters (Bz, Bt, speed, density) |
+| `GET` | `/api/kp/forecast` | Kp predictions (3/6/12/24hr) with uncertainty bounds |
+| `GET` | `/api/kp/shap?horizon=6hr` | TreeSHAP feature attribution (replay-aware) |
+| `GET` | `/api/kp/storm-probability` | Storm probability summary for alert bar |
+| `GET` | `/api/kp/predict/now` | Trigger fresh Layer 2→3 inference cycle |
+| `GET` | `/api/kp/validate?storm_id=2024_may_g5` | Predicted vs actual Kp validation replay |
+| `GET` | `/api/kp/history?hours=24` | Historical Kp forecast snapshots |
 | `GET` | `/api/satellites/risk` | Risk scores for all monitored satellites |
 | `GET` | `/api/satellites/{name}` | Deep profile for a specific satellite |
 | `GET` | `/api/grid/risk` | GIC risk per transmission corridor |
 | `GET` | `/api/advisory/latest` | Latest LLM-generated mission advisory |
 | `POST` | `/api/advisory/generate` | Trigger fresh advisory generation |
-| `POST` | `/api/advisory/chat/stream` | SSE stream: per-satellite AI explanation (EN/Hindi) |
+| `POST` | `/api/advisory/chat/stream` | SSE stream: replay-aware per-satellite AI explanation |
 | `POST` | `/api/advisory/explain/shap` | LLM plain-language explanation of SHAP drivers |
-| `GET` | `/api/history/{storm_id}` | Storm data for replay |
-| `WS` | `/realtime` | Continuous push of all data every 60 seconds |
+| `GET` | `/api/replay/catalog` | List all available historical storm datasets |
+| `POST` | `/api/replay/load` | Load a storm for replay (auto-stops any active session) |
+| `POST` | `/api/replay/stop` | Stop active replay and return to live mode |
+| `GET` | `/api/replay/status` | Current replay playback position and state |
+| `GET` | `/api/features/latest` | Current 45-feature Layer-2 vector (debugging) |
+| `WS` | `/realtime` | Continuous push of all data every 60 seconds (gated in replay) |
 
 ### Example: `/api/kp/forecast`
 
@@ -665,6 +744,12 @@ v1.0 — IIST Hackathon MVP  (May 16-19, 2026)
 ├── [x] Per-satellite AI explanation streaming (EN + Hindi)
 ├── [x] SHAP feature driver panel with LLM operator explanation
 ├── [x] Historical storm replay (4 storms: 1989/2003/2022/2024)
+├── [x] Seamless storm switching (auto-stop + load, no 409 conflict)
+├── [x] Replay-aware advisory, SHAP & chatbot context alignment
+├── [x] Multi-layer Self-Explaining System (SHAP/Satellite/Grid explained in EN/HI)
+├── [x] Conversational SSE-streaming AI Chatbot (Replay-aware English & Hindi)
+├── [x] XGBoost-dominant fusion weights (LSTM zero-pad regression fix)
+├── [x] Frontend replay guards (SHAP polling + dashboard_update gate)
 ├── [x] Cinematic alert system (G1-G5 viewport glow)
 ├── [x] One-click launcher (run_nakshatra.bat)
 └── [x] PDF advisory export
