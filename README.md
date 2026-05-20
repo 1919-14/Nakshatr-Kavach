@@ -411,77 +411,104 @@ nakshatra-kavach/
 │
 ├── backend/
 │   ├── app/
-│   │   ├── routes/
-│   │   │   ├── solar.py            # /api/solar/* endpoints
-│   │   │   ├── satellites.py       # /api/satellites/* endpoints
-│   │   │   ├── grid.py             # /api/grid/* endpoints
-│   │   │   ├── advisory.py         # /api/advisory/* endpoints
-│   │   │   └── replay.py           # /api/history/* endpoints
-│   │   ├── services/
-│   │   │   ├── data_ingestion.py   # NOAA/NASA API polling
-│   │   │   ├── feature_engineering.py
-│   │   │   ├── kp_predictor.py     # XGBoost + LSTM hybrid
-│   │   │   ├── satellite_scorer.py
-│   │   │   ├── grid_risk_engine.py
-│   │   │   ├── llm_advisory.py     # Groq LLaMA-3 integration
-│   │   │   └── replay_engine.py
+│   │   ├── database/
+│   │   │   └── db.py               # SQLite database setup and connection pool
 │   │   ├── models/
-│   │   │   ├── xgb_kp_model.pkl
-│   │   │   └── lstm_kp_model.h5
-│   │   └── data/
-│   │       ├── isro_satellites.json
-│   │       ├── india_grid_topology.json
-│   │       └── historical_storms/
-│   │           ├── 1989_quebec.csv
-│   │           ├── 2003_halloween.csv
-│   │           ├── 2022_starlink.csv
-│   │           └── 2024_may_g5.csv
-│   ├── requirements.txt
-│   └── run.py
+│   │   │   ├── lstm_kp_model.pt    # Serialized PyTorch LSTM model weights
+│   │   │   ├── lstm_scaler.pkl     # Standard scaler for LSTM sequences
+│   │   │   ├── shap_xgb_*.pkl      # Saved SHAP explainers per forecast horizon
+│   │   │   ├── xgb_kp_*.json       # Serialized XGBoost models (3hr, 6hr, 12hr, 24hr)
+│   │   │   └── xgb_scaler.pkl      # Standard scaler for XGBoost feature vectors
+│   │   ├── routes/
+│   │   │   ├── advisory.py         # LLM & rule-based advisories, SHAP explainers & chat routes
+│   │   │   ├── features.py         # Feature inspection REST routes
+│   │   │   ├── grid.py             # Indian power grid GIC corridor scoring API
+│   │   │   ├── kp_forecast.py      # Kp forecast predictions & TreeSHAP driver API
+│   │   │   ├── replay.py           # Historical storm catalog and playback control endpoints
+│   │   │   ├── satellites.py       # Satellite orbital data & individual scoring API
+│   │   │   └── solar.py            # Live telemetry retrieval & status routes
+│   │   ├── services/
+│   │   │   ├── advisory_generator.py # Advisory compiler, Groq API interface & rule fallback
+│   │   │   ├── data_ingestion.py   # Live solar wind and GOES telemetry scheduling
+│   │   │   ├── feature_engineering.py # Layer 2: 45 real-time physics feature extractor
+│   │   │   ├── fetchers.py         # Thread-safe async NOAA/NASA data retrievers
+│   │   │   ├── grid_risk_engine.py  # Layer 5: India power corridor risk scoring
+│   │   │   ├── ingestion_service.py # Core telemetry cache orchestrator
+│   │   │   ├── kp_predictor.py     # Layer 3: XGBoost + PyTorch LSTM predictor
+│   │   │   ├── kp_utils.py         # Physics conversions and storm thresholds
+│   │   │   ├── llm_advisory.py     # System prompts and LLM validation wrapper
+│   │   │   ├── physics.py          # Magnetospheric formulas & energy coupling calculations
+│   │   │   ├── pipeline.py         # Master pipeline executor (Layer 1 to Layer 6)
+│   │   │   ├── replay_engine.py    # Layer 7: Historical storm playback & interpolation
+│   │   │   ├── satellite_scorer.py  # Layer 4: Satellite radiation/drag scoring
+│   │   │   ├── storm_alert.py      # Threat level categorization and active watch flags
+│   │   │   └── validators.py       # NOAA and telemetry format validators
+│   │   ├── utils/
+│   │   │   └── constants.py        # Shared thresholds, model weights, intervals, and paths
+│   │   ├── config.py               # Application configurations
+│   │   ├── routes.py               # Master blueprint registration
+│   │   ├── create_scaler.py        # Helper to generate feature scaler pickles
+│   │   ├── create_shap_explainers.py # TreeSHAP initialization builder
+│   │   └── realtime.py             # WebSocket message pusher
+│   ├── run.py                      # Flask Application entry point (REST & Socket.IO server)
+│   └── requirements.txt            # Backend dependencies
 │
 ├── frontend/
+│   ├── public/
+│   │   └── textures/               # Globe rendering textures (NASA Blue Marble)
 │   ├── src/
-│   │   ├── store/useStormStore.js
+│   │   ├── components/
+│   │   │   ├── advisory/           # Live & LLM advisory displays
+│   │   │   ├── alerts/             # Edge alert glows & screen overlays
+│   │   │   ├── chat/               # Conversational space weather AI assistant
+│   │   │   ├── earth/              # WebGL 3D Globe, orbit tracks, and CME cone
+│   │   │   ├── forecast/           # Kp forecast charts & TreeSHAP driver indicators
+│   │   │   ├── grid/               # Indian GIC corridor transmission map
+│   │   │   ├── layout/             # Master navigation & status panels
+│   │   │   ├── satellites/         # Satellite vulnerability lists and risk cards
+│   │   │   ├── solar/              # Real-time solar wind sparkline grid
+│   │   │   └── ui/                 # Reusable UI layout elements
 │   │   ├── hooks/
-│   │   ├── mock/mockData.js
+│   │   │   └── index.js            # Unified custom query & socket event listener hooks
+│   │   ├── mock/
+│   │   │   └── mockData.js         # Offline mode fallback telemetry data
 │   │   ├── pages/
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── StormSim.jsx
-│   │   │   ├── Satellites.jsx
-│   │   │   ├── GridMap.jsx
-│   │   │   ├── Replay.jsx
-│   │   │   └── Advisory.jsx
-│   │   └── components/
-│   │       ├── earth/          # Three.js Earth + orbits + storm cone
-│   │       ├── solar/          # Telemetry strip
-│   │       ├── forecast/       # Kp forecast chart
-│   │       ├── satellites/     # Risk panel + cards
-│   │       ├── grid/           # India GIC map
-│   │       ├── advisory/       # LLM advisory panel
-│   │       ├── alerts/         # Storm overlay + edge glow
-│   │       └── ui/             # Shared primitives
-│   ├── public/textures/        # NASA Earth texture maps
+│   │   │   ├── Dashboard.jsx       # Operational control panel
+│   │   │   ├── Advisory.jsx        # Advisory report viewer
+│   │   │   ├── GridMap.jsx         # India grid analysis page
+│   │   │   ├── Replay.jsx          # Replay Theatre view
+│   │   │   ├── Satellites.jsx      # Satellite fleet vulnerability panel
+│   │   │   └── StormSim.jsx        # Scenario simulator timeline
+│   │   ├── store/
+│   │   │   └── useStormStore.js    # Zustand unified front-end global state store
+│   │   ├── utils/
+│   │   │   └── apiNormalize.js     # Data sanitizers for backend REST payloads
+│   │   ├── App.jsx                 # Client entry component
+│   │   ├── index.css               # Main visual layout & CSS variables
+│   │   └── main.jsx                # DOM mounting entry
 │   ├── package.json
 │   └── vite.config.js
 │
 ├── ml_training/
-│   ├── 01_data_download.py
-│   ├── 02_feature_engineering.py
-│   ├── 03_train_xgboost.py
-│   ├── 04_train_lstm.py
-│   ├── 05_evaluate_models.py
-│   └── notebooks/
-│       ├── EDA_solar_wind.ipynb
-│       └── May2024_storm_validation.ipynb
+│   ├── notebooks/
+│   │   ├── EDA_solar_wind.ipynb
+│   │   └── May2024_storm_validation.ipynb
+│   ├── 02_feature_engineering.py   # Prep historical records to Layer-2 schema
+│   ├── 03_train_xgboost.py         # Trains the 4 XGBoost prediction models
+│   ├── 04_train_lstm.py            # Trains the PyTorch LSTM recurrent sequence model
+│   ├── 05_evaluate_models.py       # Compiles prediction errors & outputs model reports
+│   ├── download_historical_storms.py # Fetches historical NOAA geomagnetic storms
+│   ├── evaluation_report.json      # Stored performance metric exports
+│   └── logs/                       # ML run output logs
 │
-├── docs/
-│   ├── NAKSHATRA_KAVACH_Documentation.pdf
-│   ├── SRS.md
-│   └── API_REFERENCE.md
+├── download_data/
+│   ├── build_training_dataset.py   # Synthesizes solar and Kp tables
+│   ├── download_all.py             # Scripted downloader for NOAA datasets
+│   ├── setup_and_download.bat      # Environment setup utility script
+│   └── requirements.txt            # Ingestion-specific requirements
 │
-├── docker-compose.yml
-├── .env.example
-└── README.md
+├── run_nakshatra.bat               # Windows orchestration one-click service launcher
+└── README.md                       # Comprehensive space intelligence developer manual
 ```
 
 ---
