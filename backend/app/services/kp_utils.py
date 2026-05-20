@@ -210,7 +210,9 @@ class ShapAnalyzer:
                     "storm_dampeners": [], "dominant_driver": "SHAP unavailable for this horizon"}
 
         shap_values = explainer.shap_values(xgb_vector_scaled)
-        shap_vals = shap_values[0] if len(shap_values.shape) > 1 else shap_values
+        if isinstance(shap_values, (list, tuple)):
+            shap_values = shap_values[0]
+        shap_vals = shap_values[0] if getattr(shap_values, "ndim", 1) > 1 else shap_values
 
         raw_row = xgb_vector_raw[0] if xgb_vector_raw.ndim > 1 else xgb_vector_raw
         features: List[Dict[str, Any]] = []
@@ -231,7 +233,10 @@ class ShapAnalyzer:
         for rank, feat in enumerate(features):
             feat["rank"] = rank + 1
 
-        base_value = float(explainer.expected_value)
+        base_value = explainer.expected_value
+        if isinstance(base_value, (list, tuple, np.ndarray)):
+            base_value = np.asarray(base_value).reshape(-1)[0]
+        base_value = float(base_value)
         return {
             "horizon": horizon,
             "base_value": round(base_value, 2),

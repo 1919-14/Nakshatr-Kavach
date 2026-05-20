@@ -9,3 +9,8 @@ from pathlib import Path
 
 # Ensure `backend/` is on the path so `from app.x import y` works in tests
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Load environment variables for all test suites before any imports run
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
+

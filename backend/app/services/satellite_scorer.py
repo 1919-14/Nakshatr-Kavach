@@ -399,22 +399,20 @@ def run_satellite_scoring(kp_fc: dict, snapshot: dict) -> dict:
 
 def save_satellite_risks_to_db(risks: dict) -> None:
     try:
-        from app.database.db import get_connection
-        conn = get_connection()
-        if not conn: return
-        cur = conn.cursor()
-        ts, kp = risks["computed_at_utc"], risks["kp_used"]
-        for name, r in risks.get("tier1", {}).items():
-            sc, sm = r["risk_scores"], r["safe_mode_countdown"]
-            cur.execute(
-                "INSERT INTO satellite_risk_history (computed_at_utc,satellite_name,kp_used,"
-                "drag_risk,charging_risk,radiation_risk,composite_final,risk_level,"
-                "safe_mode_required,safe_mode_minutes,recommended_action) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                (ts, name, kp, sc["drag_risk"], sc["charging_risk"], sc["radiation_risk"],
-                 sc["composite_final"], r["risk_level"], 1 if sm.get("safe_mode_required") else 0,
-                 sm.get("safe_mode_deadline_minutes"), r["recommended_action"][:500]))
-        conn.commit()
+        from app.database.db import get_db
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                ts, kp = risks["computed_at_utc"], risks["kp_used"]
+                for name, r in risks.get("tier1", {}).items():
+                    sc, sm = r["risk_scores"], r["safe_mode_countdown"]
+                    cur.execute(
+                        "INSERT INTO satellite_risk_history (computed_at_utc,satellite_name,kp_used,"
+                        "drag_risk,charging_risk,radiation_risk,composite_final,risk_level,"
+                        "safe_mode_required,safe_mode_minutes,recommended_action) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (ts, name, kp, sc["drag_risk"], sc["charging_risk"], sc["radiation_risk"],
+                         sc["composite_final"], r["risk_level"], 1 if sm.get("safe_mode_required") else 0,
+                         sm.get("safe_mode_deadline_minutes"), r["recommended_action"][:500]))
     except Exception as e:
         logger.error("Satellite risks DB save failed: %s", e)
 

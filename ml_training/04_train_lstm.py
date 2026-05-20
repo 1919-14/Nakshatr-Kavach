@@ -18,6 +18,17 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+
+# ── Windows: register PyTorch CUDA DLL directory before torch import ──────────
+import os, sys
+if sys.platform == "win32":
+    import importlib.util
+    _torch_spec = importlib.util.find_spec("torch")
+    if _torch_spec and _torch_spec.origin:
+        _torch_lib = os.path.join(os.path.dirname(_torch_spec.origin), "lib")
+        if os.path.isdir(_torch_lib) and hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(_torch_lib)
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -107,49 +118,64 @@ def storm_weighted_huber(pred: torch.Tensor, target: torch.Tensor,
 def create_sequences_from_parquet(parquet_path: Path, seq_len: int = 24,
                                    max_rows: int = 500_000):
     """
-    Sample max_rows rows evenly from the parquet via pyarrow (fast, low RAM),
-    then build sliding-window sequences for LSTM: (N, seq_len, n_features).
+    Memory-efficient loader: reads parquet row-groups via pyarrow (avoids
+    loading the entire 2.4 GB file into pandas at once), builds sliding-window
+    sequences sampled evenly across all data to capture storm events.
     """
     import pyarrow.parquet as pq
-    import pandas as pd
 
-    print(f"Loading dataset (sampled): {parquet_path}")
+    print(f"Loading dataset via pyarrow (chunked): {parquet_path}")
     pf = pq.ParquetFile(parquet_path)
     total_rows = pf.metadata.num_rows
     n_groups = pf.metadata.num_row_groups
-    print(f"  {total_rows:,} rows in file — reading {max_rows:,} across {n_groups} row-groups.")
+    print(f"  {total_rows:,} rows in {n_groups} row-groups.")
 
-    target_per_group = max(1, max_rows // n_groups)
-    rows_collected = []
-    for i in range(n_groups):
-        batch = pf.read_row_group(i).to_pandas()
-        stride = max(1, len(batch) // target_per_group)
-        rows_collected.append(batch.iloc[::stride].head(target_per_group))
-        if sum(len(r) for r in rows_collected) >= max_rows:
-            break
-
-    df = pd.concat(rows_collected, ignore_index=True).head(max_rows)
-    print(f"  Sampled {len(df):,} rows of real NASA OMNI + GFZ Kp data.")
-
+    # Read first group to get column info
+    sample = pf.read_row_group(0).to_pandas()
     drop_cols = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
                  "kp_target_12hr", "kp_target_24hr"]
-    feat_cols = [c for c in df.columns if c not in drop_cols]
+    feat_cols = [c for c in sample.columns if c not in drop_cols]
+    target_cols = ["kp_target_3hr", "kp_target_6hr", "kp_target_12hr", "kp_target_24hr"]
     n_features = len(feat_cols)
     print(f"  Using {n_features} physical features.")
+    del sample
 
-    features = np.nan_to_num(df[feat_cols].values.astype(np.float32), nan=0.0)
-    targets  = np.nan_to_num(df[["kp_target_3hr", "kp_target_6hr",
-                                  "kp_target_12hr", "kp_target_24hr"]].values.astype(np.float32), nan=0.0)
+    # Target: ~500K sequences spread across all row groups
+    max_seqs = 500_000
+    seqs_per_group = max(100, max_seqs // n_groups)
 
-    # Build sliding-window sequences (step=1 gives max richness within max_rows)
-    max_seqs = 150_000
-    step = max(1, (len(features) - seq_len) // max_seqs)
     X_list, y_list = [], []
-    for i in range(0, len(features) - seq_len, step):
-        X_list.append(features[i: i + seq_len])
-        y_list.append(targets[i + seq_len - 1])
+    total_storm = 0
+
+    for rg in range(n_groups):
+        chunk = pf.read_row_group(rg, columns=feat_cols + target_cols).to_pandas()
+        feats = np.nan_to_num(chunk[feat_cols].values.astype(np.float32), nan=0.0)
+        tgts = np.nan_to_num(chunk[target_cols].values.astype(np.float32), nan=0.0)
+        n = len(feats)
+
+        total_storm += int((tgts[:, 0] >= 5.0).sum())
+
+        if n <= seq_len:
+            del chunk, feats, tgts
+            continue
+
+        step = max(1, (n - seq_len) // seqs_per_group)
+        count = 0
+        for i in range(0, n - seq_len, step):
+            X_list.append(feats[i: i + seq_len])
+            y_list.append(tgts[i + seq_len - 1])
+            count += 1
+            if count >= seqs_per_group:
+                break
+
+        del chunk, feats, tgts
+        if rg % 5 == 0:
+            print(f"    Row group {rg+1}/{n_groups}: {len(X_list):,} sequences so far")
+
         if len(X_list) >= max_seqs:
             break
+
+    print(f"  Storm rows in dataset (Kp>=5 target): {total_storm:,}")
 
     X = np.array(X_list, dtype=np.float32)
     y = np.array(y_list, dtype=np.float32)

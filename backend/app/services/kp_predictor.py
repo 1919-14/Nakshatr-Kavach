@@ -20,7 +20,9 @@ import logging
 import os
 import threading
 import time
+import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -164,6 +166,9 @@ class ModelLoader:
         self.xgb_models: Dict[str, Any] = {}
         self.shap_explainers: Dict[str, Any] = {}
         self.lstm_model: Any = None
+        self._lstm_backend: Optional[str] = None
+        self._lstm_n_features: int = 0
+        self._lstm_seq_len: int = 0
         self.models_loaded: bool = False
         self.degraded_mode: bool = False
         self._shap_analyzer = ShapAnalyzer()
@@ -179,12 +184,12 @@ class ModelLoader:
         self._load_shap_explainers(joblib)
         self._init_shap_analyzer()
 
-        if not xgb_ok and not lstm_ok:
+        if not xgb_ok:
             self.degraded_mode = True
             logger.warning("DEGRADED_MODE: No ML models found. Using rule-based fallback.")
-        elif not xgb_ok or not lstm_ok:
-            self.degraded_mode = True
-            logger.warning("DEGRADED_MODE: Partial model load — some models missing.")
+        elif not lstm_ok:
+            self.degraded_mode = False
+            logger.info("Optional LSTM backend unavailable; using XGBoost + synthetic sequence fallback.")
         else:
             self.degraded_mode = False
 
@@ -217,15 +222,25 @@ class ModelLoader:
         enable_torch_lstm = os.getenv("NAKSHATRA_ENABLE_TORCH_LSTM", "0").strip().lower() in {"1", "true", "yes"}
         if os.path.exists(pt_path) and enable_torch_lstm:
             try:
-                import torch, importlib, sys
-                from pathlib import Path
+                # ── Fix Windows DLL search path for PyTorch ──
+                # On Windows, Python 3.8+ requires explicit DLL directory
+                # registration.  Without this, c10.dll fails with WinError 1114.
+                import importlib, sys
+                torch_lib_dir = Path(sys.executable).parent.parent / "Lib" / "site-packages" / "torch" / "lib"
+                if torch_lib_dir.is_dir() and os.name == "nt":
+                    if hasattr(os, "add_dll_directory"):
+                        os.add_dll_directory(str(torch_lib_dir))
+                        logger.debug("Added PyTorch DLL directory: %s", torch_lib_dir)
+
+                import torch
+
                 root_dir = str(Path(__file__).resolve().parents[3])
                 if root_dir not in sys.path:
                     sys.path.insert(0, root_dir)
                 _lstm_mod = importlib.import_module("ml_training.04_train_lstm")
                 NakshatraLSTM = _lstm_mod.NakshatraLSTM
                 ckpt = torch.load(pt_path, map_location="cpu", weights_only=False)
-                n_features = ckpt.get("n_features", 72)
+                n_features = ckpt.get("n_features", 15)
                 seq_len    = ckpt.get("seq_len", 24)
                 model = NakshatraLSTM(n_features=n_features, seq_len=seq_len)
                 model.load_state_dict(ckpt["model_state_dict"])
@@ -238,8 +253,10 @@ class ModelLoader:
                 return True
             except ImportError as exc:
                 logger.info("PyTorch is not installed; skipping optional .pt LSTM branch: %s", exc)
+            except (OSError, RuntimeError) as exc:
+                logger.info("PyTorch LSTM unavailable on this platform; using fallback: %s", exc)
             except Exception as exc:
-                logger.warning("PyTorch LSTM load failed: %s", exc)
+                logger.info("PyTorch LSTM load failed; using fallback: %s", exc)
         elif os.path.exists(pt_path):
             logger.info(
                 "PyTorch LSTM checkpoint present but disabled. Set NAKSHATRA_ENABLE_TORCH_LSTM=1 to enable it."
@@ -260,25 +277,40 @@ class ModelLoader:
                 logger.info("TF LSTM loaded from %s", LSTM_MODEL_PATH)
                 return True
             except Exception as exc:
-                logger.warning("TensorFlow LSTM load failed: %s", exc)
+                logger.info("TensorFlow LSTM load failed; using fallback: %s", exc)
 
-        logger.warning("LSTM model not loaded; optional ensemble branch disabled")
+        logger.info("LSTM model not loaded; optional ensemble branch disabled")
         return False
 
     def _load_shap_explainers(self, joblib: Any) -> None:
-        try:
-            import shap
-        except ImportError:
-            logger.warning("shap not installed — explainability unavailable")
-            return
-            
+        loaded_from_disk = 0
         for horizon in ["3hr", "6hr", "12hr", "24hr"]:
             if horizon in self.xgb_models:
                 try:
+                    explainer_path = SHAP_EXPLAINER_PATHS.get(horizon)
+                    if explainer_path and os.path.exists(explainer_path):
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings(
+                                "ignore",
+                                message=r".*loading a serialized model.*",
+                                category=UserWarning,
+                            )
+                            loaded = joblib.load(explainer_path)
+                        if isinstance(loaded, dict):
+                            loaded = loaded.get("explainer") or loaded.get("shap_explainer") or loaded.get("tree_explainer") or loaded
+                        if hasattr(loaded, "shap_values"):
+                            self.shap_explainers[horizon] = loaded
+                            loaded_from_disk += 1
+                            logger.info("Loaded SHAP explainer for %s from %s", horizon, explainer_path)
+                            continue
+
+                    import shap
                     self.shap_explainers[horizon] = shap.TreeExplainer(self.xgb_models[horizon])
                     logger.info("Initialized SHAP explainer for %s", horizon)
                 except Exception as e:
-                    logger.warning("SHAP explainer init failed for %s: %s", horizon, e)
+                    logger.info("SHAP explainer unavailable for %s; using fallback: %s", horizon, e)
+        if loaded_from_disk:
+            logger.info("Loaded %d serialized SHAP explainer(s) from disk", loaded_from_disk)
 
     def _init_shap_analyzer(self) -> None:
         from app.services.feature_engineering import FEATURE_NAMES
@@ -334,12 +366,14 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
             break
 
     # ── XGBoost predictions ──
+    # IMPORTANT: XGBoost is tree-based — it was trained on RAW features,
+    # NOT MinMaxScaler'd values.  Always feed xgb_vector_raw here.
     t_xgb = time.perf_counter()
     if model_loader.xgb_models:
         xgb_preds: Dict[str, float] = {}
         for horizon in ["3hr", "6hr", "12hr", "24hr"]:
             if horizon in model_loader.xgb_models:
-                raw_pred = model_loader.xgb_models[horizon].predict(xgb_vector_scaled.reshape(1, -1))[0]
+                raw_pred = model_loader.xgb_models[horizon].predict(xgb_vector_raw.reshape(1, -1))[0]
                 xgb_preds[horizon] = float(np.clip(raw_pred, 0.0, 9.0))
             else:
                 xgb_preds[horizon] = current_kp
@@ -348,11 +382,25 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
     xgb_ms = (time.perf_counter() - t_xgb) * 1000
 
     # ── LSTM MC Dropout ──
+    # PyTorch LSTM was trained on RAW features; use lstm_sequence_raw.
     t_lstm = time.perf_counter()
     if model_loader.lstm_model is not None:
         backend = getattr(model_loader, "_lstm_backend", "tensorflow")
         if backend == "pytorch":
-            lstm_preds = _predict_pytorch_lstm(model_loader.lstm_model, lstm_seq_scaled, n_samples=N_MC_SAMPLES)
+            lstm_seq_raw = features.get("lstm_sequence_raw", lstm_seq_scaled)
+            if not isinstance(lstm_seq_raw, np.ndarray):
+                lstm_seq_raw = np.array(lstm_seq_raw, dtype=np.float32)
+            if lstm_seq_raw.ndim == 2:
+                lstm_seq_raw = lstm_seq_raw.reshape(1, lstm_seq_raw.shape[0], lstm_seq_raw.shape[1])
+            # Pad/truncate features to match LSTM's expected input size (72)
+            expected_feats = getattr(model_loader, "_lstm_n_features", 72)
+            actual_feats = lstm_seq_raw.shape[-1]
+            if actual_feats < expected_feats:
+                pad = np.zeros((*lstm_seq_raw.shape[:-1], expected_feats - actual_feats), dtype=np.float32)
+                lstm_seq_raw = np.concatenate([lstm_seq_raw, pad], axis=-1)
+            elif actual_feats > expected_feats:
+                lstm_seq_raw = lstm_seq_raw[..., :expected_feats]
+            lstm_preds = _predict_pytorch_lstm(model_loader.lstm_model, lstm_seq_raw, n_samples=N_MC_SAMPLES)
         else:
             lstm_preds = predict_with_uncertainty(model_loader.lstm_model, lstm_seq_scaled, n_samples=N_MC_SAMPLES)
     else:
@@ -364,12 +412,13 @@ def run_inference_cycle(features: Dict[str, Any]) -> Dict[str, Any]:
     fused = fuse_predictions(xgb_preds, lstm_preds, data_quality)
 
     # ── SHAP analysis ──
+    # SHAP explainers were also built on raw features; pass raw for both.
     t_shap = time.perf_counter()
     shap_output = None
     if model_loader.shap_explainers.get("6hr"):
         try:
             shap_output = model_loader.shap_analyzer.compute_shap(
-                "6hr", xgb_vector_raw.reshape(1, -1), xgb_vector_scaled.reshape(1, -1))
+                "6hr", xgb_vector_raw.reshape(1, -1), xgb_vector_raw.reshape(1, -1))
         except Exception as e:
             logger.warning("SHAP computation failed: %s", e)
     shap_ms = (time.perf_counter() - t_shap) * 1000

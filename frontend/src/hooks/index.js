@@ -167,10 +167,12 @@ export function useAdvisory() {
 
 // ── useShapExplain ─────────────────────────────────────────────────────────────
 export function useShapExplain() {
-  const { setShapExplain } = useStormStore();
+  const { setShapExplain, isReplayMode } = useStormStore();
   return useQuery({
     queryKey: ["shap-explain"],
     queryFn: async () => {
+      // Skip live SHAP poll during replay — data comes from replay frame hydration
+      if (isReplayMode) return null;
       if (USE_MOCK) {
         const mock = {
           method: "demo",
@@ -239,7 +241,19 @@ export function useSocket() {
         if (output.satellite_risks) setSatellites(normalizeSatelliteRisks(output.satellite_risks));
         if (output.grid_risks) setGridCorridors(normalizeGridRisks(output.grid_risks));
         if (output.advisory) setAdvisory(normalizeAdvisory(output.advisory));
-        if (output.shap) setShapExplain(normalizeShapExplain(output.shap));
+        // Extract SHAP from direct key or from nested kp_forecast.shap
+        const shapData = output.shap || (output.kp_forecast && output.kp_forecast.shap);
+        if (shapData) {
+          setShapExplain(normalizeShapExplain(shapData));
+        } else {
+          // Fetch from the replay-aware /api/kp/shap endpoint as fallback
+          try {
+            const shapRes = await axios.get(`${API_BASE}/api/kp/shap`, { timeout: 10000 });
+            if (shapRes.data && !shapRes.data.error) {
+              setShapExplain(normalizeShapExplain(shapRes.data));
+            }
+          } catch { /* SHAP unavailable during this replay frame */ }
+        }
       } catch (error) {
         if (error.response?.status !== 404) {
           console.warn("Replay frame hydration failed", error);
@@ -262,14 +276,19 @@ export function useSocket() {
       s.on("dashboard_update", (payload) => {
         if (USE_MOCK) return;
         if (!payload) return;
-        if (payload.solar_wind) setSolarWind(normalizeSolarSnapshot(payload.solar_wind));
-        if (payload.satellites) setSatellites(normalizeSatelliteRisks(payload.satellites));
-        if (payload.grid) setGridCorridors(normalizeGridRisks(payload.grid));
-        if (payload.shap) setShapExplain(normalizeShapExplain(payload.shap));
-        if (payload.kp_forecast) {
-          setKpForecast(normalizeKpForecast(payload.kp_forecast));
-          setKpChartData(buildKpChartData(payload.kp_forecast));
+        // During replay, live dashboard_update must not overwrite replay frame data
+        const inReplay = useStormStore.getState().isReplayMode;
+        if (!inReplay) {
+          if (payload.solar_wind) setSolarWind(normalizeSolarSnapshot(payload.solar_wind));
+          if (payload.shap) setShapExplain(normalizeShapExplain(payload.shap));
+          if (payload.kp_forecast) {
+            setKpForecast(normalizeKpForecast(payload.kp_forecast));
+            setKpChartData(buildKpChartData(payload.kp_forecast));
+          }
         }
+        // Satellites and grid are always updated (they re-score from current kp anyway)
+        if (payload.satellites && !inReplay) setSatellites(normalizeSatelliteRisks(payload.satellites));
+        if (payload.grid && !inReplay) setGridCorridors(normalizeGridRisks(payload.grid));
       });
       s.on("replay_frame", hydrateReplayFrame);
       s.on("replay_frame_ready", (payload) => {

@@ -177,7 +177,8 @@ def test_validate_solar_wind_rejects_out_of_range():
         "active": True,
     }
 
-    result = validate_solar_wind(raw)
+    with patch("app.services.validators._try_interpolate_field", return_value=(None, False)):
+        result = validate_solar_wind(raw)
 
     assert result["bz_gsm"] is None, (
         "Bz=-999 is out of physical range [-100,+100] and must be nulled"
@@ -185,6 +186,7 @@ def test_validate_solar_wind_rejects_out_of_range():
     assert result["data_quality_flag"] in ("PARTIAL", "STALE", "UNKNOWN"), (
         "Quality should degrade when bz_gsm is null"
     )
+
 
 
 # ─────────────────────────────────────────────────────────────────

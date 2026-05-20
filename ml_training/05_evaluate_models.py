@@ -60,10 +60,22 @@ def evaluate() -> None:
             "12hr": df["kp_target_12hr"].values,
             "24hr": df["kp_target_24hr"].values,
         }
-        drop_cols = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
-                     "kp_target_12hr", "kp_target_24hr"]
-        feat_cols = [c for c in df.columns if c not in drop_cols]
-        X_test = np.nan_to_num(df[feat_cols].values.astype(np.float32), nan=0.0)
+
+        # Build features using the SAME pipeline as training (build_layer2_feature_matrix)
+        # to ensure feature order and derivation match the XGBoost models exactly.
+        import importlib
+        try:
+            _xgb_train = importlib.import_module("ml_training.03_train_xgboost")
+            X_test = _xgb_train.build_layer2_feature_matrix(df)
+            print(f"  Built {X_test.shape[1]} Layer-2 features (matching training pipeline)")
+        except Exception as exc:
+            print(f"  WARNING: Could not use build_layer2_feature_matrix ({exc})")
+            print(f"  Falling back to raw parquet columns (may cause feature mismatch!)")
+            drop_cols = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
+                         "kp_target_12hr", "kp_target_24hr"]
+            feat_cols = [c for c in df.columns if c not in drop_cols]
+            X_test = np.nan_to_num(df[feat_cols].values.astype(np.float32), nan=0.0)
+
         report["test_set"] = "may2024_g5_storm_real"
         report["test_rows"] = len(df)
     else:
@@ -104,13 +116,18 @@ def evaluate() -> None:
         lstm_model.eval()
         print(f"Loaded PyTorch LSTM from {pt_path} (features={lstm_n_features})")
 
-        # Build sliding-window sequences from X_test for LSTM inference
-        # X_test has shape (n_rows, n_features). We need (n_windows, seq_len, n_features).
+        # Build sliding-window sequences from RAW parquet features for LSTM
+        # LSTM was trained on all parquet columns except timestamp+targets (72 features)
         n_test = len(X_test)
         if n_test > lstm_seq_len:
-            X_test_f = X_test[:, :lstm_n_features]  # align feature count
+            # Build raw feature matrix from parquet (matching LSTM training)
+            drop_cols_lstm = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
+                              "kp_target_12hr", "kp_target_24hr"]
+            feat_cols_lstm = [c for c in df.columns if c not in drop_cols_lstm]
+            X_lstm_raw = np.nan_to_num(df[feat_cols_lstm].values.astype(np.float32), nan=0.0)
+            X_lstm_raw = X_lstm_raw[:, :lstm_n_features]  # align feature count
             lstm_windows = np.stack(
-                [X_test_f[i: i + lstm_seq_len] for i in range(n_test - lstm_seq_len)],
+                [X_lstm_raw[i: i + lstm_seq_len] for i in range(n_test - lstm_seq_len)],
                 axis=0).astype(np.float32)
             with torch.no_grad():
                 lstm_raw = lstm_model(torch.from_numpy(lstm_windows)).numpy()

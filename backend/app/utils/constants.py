@@ -240,12 +240,13 @@ FEATURE_IMPUTATION_VALUES: dict = {
 # LAYER 3 KP PREDICTION ENGINE CONSTANTS
 # -----------------------------------------------------------------------------
 
-# Hybrid fusion weights: XGBoost dominates short-term, LSTM dominates long-term
+# Hybrid fusion weights: XGBoost dominant — LSTM runs on degraded input
+# (15/72 features available at inference; rest zero-padded) so it gets minimal weight.
 XGB_LSTM_WEIGHTS: dict = {
-    "3hr":  {"xgb": 0.70, "lstm": 0.30},
-    "6hr":  {"xgb": 0.55, "lstm": 0.45},
-    "12hr": {"xgb": 0.30, "lstm": 0.70},
-    "24hr": {"xgb": 0.15, "lstm": 0.85},
+    "3hr":  {"xgb": 0.92, "lstm": 0.08},
+    "6hr":  {"xgb": 0.90, "lstm": 0.10},
+    "12hr": {"xgb": 0.88, "lstm": 0.12},
+    "24hr": {"xgb": 0.85, "lstm": 0.15},
 }
 
 # Monte Carlo Dropout sample count for uncertainty quantification

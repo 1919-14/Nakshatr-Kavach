@@ -20,12 +20,15 @@ import joblib
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+import pyarrow.parquet as pq
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error
 
 # Ensure backend/ is on path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
+
+from app.services.feature_engineering import FEATURE_NAMES
 
 MODEL_DIR = ROOT / "backend" / "app" / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,6 +61,132 @@ HORIZON_OVERRIDES = {
 
 HORIZON_TARGET_OFFSETS = {"3hr": 180, "6hr": 360, "12hr": 720, "24hr": 1440}
 RMSE_TARGETS = {"3hr": 0.8, "6hr": 1.0, "12hr": 1.3, "24hr": 1.6}
+
+
+_DIRECT_COLUMN_MAP = {
+    "bz_current": "bz_gsm",
+    "bz_mean_30min": "bz_gsm_mean_30min",
+    "bz_mean_1hr": "bz_gsm_mean_1hr",
+    "bz_mean_3hr": "bz_gsm_mean_3hr",
+    "bz_min_30min": "bz_gsm_min_30min",
+    "bz_min_1hr": "bz_gsm_min_1hr",
+    "bz_std_1hr": "bz_gsm_std_1hr",
+    "bz_rate_of_change_per_min": "bz_roc",
+    "bt_mean_30min": "bt_mean_30min",
+    "bt_mean_1hr": "bt_mean_1hr",
+    "bt_max_1hr": "bt_max_1hr",
+    "bt_rate_of_change_per_min": "bt_roc",
+    "sw_speed_mean_1hr": "flow_speed_mean_1hr",
+    "sw_speed_max_1hr": "flow_speed_max_1hr",
+    "sw_speed_rate_of_change": "speed_roc",
+    "proton_density_mean_1hr": "proton_density_mean_1hr",
+    "epsilon_current": "epsilon",
+    "bz_southward_onset_flag": "bz_southward_onset",
+    "kp_current": "kp",
+    "kp_mean_6hr": "kp_mean_6hr",
+    "kp_mean_12hr": "kp_mean_12hr",
+    "kp_max_24hr": "kp_max_24hr",
+    "kp_rate_of_change": "kp_roc",
+    "bz_speed_interaction": "bz_speed_interaction",
+    "bt_speed_interaction": "bt_speed_interaction",
+    "imf_clock_angle_sin": "clock_sin",
+    "imf_clock_angle_cos": "clock_cos",
+}
+
+
+_ZERO_FEATURES = {
+    "xray_severity_current",
+    "xray_severity_max_6hr",
+    "time_since_last_M_class_hours",
+    "xray_peak_flux_24hr",
+    "cme_earth_directed",
+    "cme_speed_normalized",
+    "cme_arrival_hours",
+    "cme_is_imminent",
+}
+
+
+def _rolling_sum(values: np.ndarray, window: int) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    csum = np.cumsum(values, dtype=np.float64)
+    out = csum.copy()
+    out[window:] = csum[window:] - csum[:-window]
+    return out.astype(np.float32)
+
+
+def _rolling_mean(values: np.ndarray, window: int) -> np.ndarray:
+    sums = _rolling_sum(values, window=window).astype(np.float64)
+    denom = np.minimum(np.arange(1, len(values) + 1, dtype=np.int32), window).astype(np.float64)
+    return (sums / denom).astype(np.float32)
+
+
+def _consecutive_true_count(flags: np.ndarray) -> np.ndarray:
+    flags = (np.asarray(flags) > 0).astype(np.int8)
+    idx = np.arange(flags.size, dtype=np.int32)
+    last_false = np.maximum.accumulate(np.where(flags == 0, idx, -1))
+    consec = np.where(flags == 1, idx - last_false, 0)
+    return consec.astype(np.float32)
+
+
+def _load_parquet_tail_columns(parquet_path: Path, columns: list[str], max_rows: int, buffer_rows: int) -> pd.DataFrame:
+    pf = pq.ParquetFile(parquet_path)
+    needed = max_rows + buffer_rows
+    row_groups: list[int] = []
+    running = 0
+    for rg in range(pf.num_row_groups - 1, -1, -1):
+        row_groups.append(rg)
+        running += pf.metadata.row_group(rg).num_rows
+        if running >= needed:
+            break
+    row_groups = sorted(row_groups)
+
+    table = pf.read_row_groups(row_groups, columns=columns)
+    df = table.to_pandas()
+    if len(df) > needed:
+        df = df.iloc[-needed:].copy()
+    return df
+
+
+def build_layer2_feature_matrix(df: pd.DataFrame) -> np.ndarray:
+    """Build the exact Layer 2 XGB feature vector (45 features) in FEATURE_NAMES order."""
+    n = len(df)
+    south = df["bz_southward"].to_numpy()
+    epsilon = df["epsilon"].to_numpy(dtype=np.float32)
+    dynp = df["dynamic_pressure"].to_numpy(dtype=np.float32)
+
+    computed: dict[str, np.ndarray] = {
+        "bz_southward_duration_30min": _rolling_sum(south.astype(np.float32), window=30),
+        "consecutive_southward_minutes": _consecutive_true_count(south),
+        "southward_fraction_30min": _rolling_mean(south.astype(np.float32), window=30),
+        "southward_fraction_1hr": _rolling_mean(south.astype(np.float32), window=60),
+        "southward_fraction_3hr": _rolling_mean(south.astype(np.float32), window=180),
+        "epsilon_mean_30min": _rolling_mean(epsilon, window=30),
+        "epsilon_mean_1hr": _rolling_mean(epsilon, window=60),
+        "epsilon_cumulative_3hr": _rolling_sum(epsilon, window=180),
+        "dynamic_pressure_mean_1hr": _rolling_mean(dynp, window=60),
+        # Approximation: keep aligned with runtime schema without costly rolling max.
+        "dynamic_pressure_max_1hr": _rolling_mean(dynp, window=60),
+    }
+
+    features: list[np.ndarray] = []
+    for name in FEATURE_NAMES:
+        if name in _ZERO_FEATURES:
+            features.append(np.zeros(n, dtype=np.float32))
+            continue
+        mapped = _DIRECT_COLUMN_MAP.get(name)
+        if mapped is not None:
+            features.append(df[mapped].to_numpy(dtype=np.float32))
+            continue
+        if name in computed:
+            features.append(computed[name].astype(np.float32))
+            continue
+        raise KeyError(f"No mapping for feature '{name}'")
+
+    X = np.column_stack(features).astype(np.float32)
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    if X.shape[1] != len(FEATURE_NAMES):
+        raise ValueError(f"Feature matrix has {X.shape[1]} cols, expected {len(FEATURE_NAMES)}")
+    return X
 
 
 def generate_synthetic_training_data(n_samples: int = 8000) -> pd.DataFrame:
@@ -144,28 +273,45 @@ def train_and_save() -> None:
     parquet_path = ROOT / "download_data" / "raw" / "training_xgb.parquet"
     if parquet_path.exists():
         print(f"Loading REAL NASA OMNI + GFZ Potsdam dataset: {parquet_path}")
-        df = pd.read_parquet(parquet_path)
-        print(f"  Loaded {len(df):,} rows of real satellite solar wind data.")
+
+        required_cols = {
+            "timestamp_utc",
+            "kp_target_3hr",
+            "kp_target_6hr",
+            "kp_target_12hr",
+            "kp_target_24hr",
+            # columns used directly or for derived rollups
+            "bz_southward",
+            "bz_southward_onset",
+            "epsilon",
+            "dynamic_pressure",
+        }
+        required_cols.update(_DIRECT_COLUMN_MAP.values())
+
+        # Load ALL rows — storm events are extremely rare (< 0.001% of data),
+        # so we must train on the complete dataset to capture them.
+        print("  Loading FULL dataset (all rows) — this may take a minute...")
+        df = pd.read_parquet(parquet_path, columns=sorted(required_cols))
+        print(f"  Loaded {len(df):,} rows for training.")
 
         # Extract targets
         targets = {
-            "3hr":  df["kp_target_3hr"].values,
-            "6hr":  df["kp_target_6hr"].values,
-            "12hr": df["kp_target_12hr"].values,
-            "24hr": df["kp_target_24hr"].values,
+            "3hr": df["kp_target_3hr"].to_numpy(dtype=np.float32),
+            "6hr": df["kp_target_6hr"].to_numpy(dtype=np.float32),
+            "12hr": df["kp_target_12hr"].to_numpy(dtype=np.float32),
+            "24hr": df["kp_target_24hr"].to_numpy(dtype=np.float32),
         }
 
-        # Feature columns = everything except timestamps and targets
-        drop_cols = ["timestamp_utc", "kp_target_3hr", "kp_target_6hr",
-                     "kp_target_12hr", "kp_target_24hr"]
-        feat_cols = [c for c in df.columns if c not in drop_cols]
-        print(f"  Using {len(feat_cols)} physical features: {feat_cols[:5]} ...")
-        X = df[feat_cols].values.astype(np.float32)
+        # Report storm sample counts for each horizon
+        for h in ["3hr", "6hr", "12hr", "24hr"]:
+            storm_n = int((targets[h] >= 5.0).sum())
+            print(f"  Target {h}: {storm_n:,} storm samples (Kp>=5)")
 
-        # Clean NaN/inf
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        print(f"  Using {len(FEATURE_NAMES)} Layer-2 aligned features: {FEATURE_NAMES[:5]} ...")
+        X = build_layer2_feature_matrix(df)
+
         for k in targets:
-            targets[k] = np.nan_to_num(targets[k], nan=0.0)
+            targets[k] = np.nan_to_num(targets[k], nan=0.0, posinf=0.0, neginf=0.0)
     else:
         print("WARNING: Real dataset not found. Using synthetic fallback.")
         X, targets = generate_synthetic_training_data(n_samples=10000)
@@ -183,7 +329,7 @@ def train_and_save() -> None:
     tscv = TimeSeriesSplit(n_splits=5, gap=48)
 
     for horizon in ["3hr", "6hr", "12hr", "24hr"]:
-        print(f"\n{'─' * 50}")
+        print(f"\n{'-' * 50}")
         print(f"Training {horizon} model...")
         y = targets[horizon]
 
@@ -203,10 +349,22 @@ def train_and_save() -> None:
         train_idx, val_idx = list(tscv.split(X))[-1]
         X_train, X_val = X[train_idx], X[val_idx]
         y_train, y_val = y[train_idx], y[val_idx]
+
+        # ── Storm-weighted sampling ──
+        # With only ~57 storm rows out of 11M+, the model collapses to
+        # predicting near-zero.  Heavily upweight storm periods.
+        sample_weights = np.ones(len(y_train), dtype=np.float32)
+        sample_weights[y_train >= 7.0] = 50.0   # G3+ storms: 50× weight
+        sample_weights[np.logical_and(y_train >= 5.0, y_train < 7.0)] = 20.0  # G1-G2
+        sample_weights[np.logical_and(y_train >= 3.0, y_train < 5.0)] = 5.0   # Active
+        sample_weights[np.logical_and(y_train >= 1.0, y_train < 3.0)] = 2.0   # Unsettled
+        storm_count = int((y_train >= 5.0).sum())
         print(f"  Training on {len(X_train):,} rows, validating on {len(X_val):,} rows.")
+        print(f"  Storm samples (Kp>=5): {storm_count} — storm weights applied (50x/20x/5x/2x)")
 
         model.fit(
             X_train, y_train,
+            sample_weight=sample_weights,
             eval_set=[(X_val, y_val)],
             verbose=100,
         )

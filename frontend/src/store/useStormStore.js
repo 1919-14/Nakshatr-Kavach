@@ -57,7 +57,10 @@ export const useStormStore = create((set, get) => ({
   setGridCorridors: (d)  => set({ gridCorridors: d }),
   setAdvisory:      (d)  => set({ advisory: d }),
   setShapExplain:   (d)  => set({ shapExplain: d }),
-  setSystemStatus:  (d)  => set(state => ({ systemStatus: typeof d === "function" ? d(state.systemStatus) : d })),
+  setSystemStatus:  (d)  => set(state => {
+    const next = typeof d === "function" ? d(state.systemStatus) : d;
+    return { systemStatus: { ...state.systemStatus, ...next } };
+  }),
 
   selectSatellite:  (id) => set({ selectedSatellite: id }),
   clearSatellite:   ()   => set({ selectedSatellite: null }),

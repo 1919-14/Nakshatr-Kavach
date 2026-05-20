@@ -121,7 +121,7 @@ ADVISORY STRUCTURE (follow this EXACTLY, no deviation):
     "navigation_alert": "<NavIC/GPS status and user advisory, or null>",
     "hindi_summary": "<4-5 sentence operational summary in Hindi>",
     "priority_action": "<single most important action in one sentence>",
-    "advisory_classification": "<STORM_ESCALATION|SATELLITE_CRITICAL|GRID_CRITICAL|STORM_ONSET|CME_IMMINENT|STORM_UPDATE|STORM_RECOVERY|MANUAL_REFRESH>"
+    "advisory_classification": "<STORM_ESCALATION|SATELLITE_CRITICAL|GRID_CRITICAL|STORM_ONSET|CME_IMMINENT|STORM_UPDATE|STORM_RECOVERY|MANUAL_REFRESH|ROUTINE_REFRESH>"
   }
 
 MANDATORY RULES:
@@ -160,6 +160,7 @@ VALID_ADVISORY_TYPES = {
     "STORM_UPDATE",
     "STORM_RECOVERY",
     "MANUAL_REFRESH",
+    "ROUTINE_REFRESH",
 }
 STORM_CLASS_ORDER = ["QUIET", "G1", "G2", "G3", "G4", "G5"]
 

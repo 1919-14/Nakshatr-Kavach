@@ -1270,7 +1270,7 @@ def load_scalers(
             _scaler_xgb = _IdentityScaler()
             _scaler_lstm = _IdentityScaler()
             _scalers_loaded = True
-        logger.warning("%s; using raw feature passthrough scalers for runtime inference", message)
+        logger.info("%s; using raw feature passthrough scalers for runtime inference", message)
         return
 
     try:

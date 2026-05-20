@@ -30,20 +30,58 @@ RAW    = ROOT / "raw"
 OMNI   = RAW / "omni"
 KP_DIR = RAW / "kp"
 
-# OMNI column indices (0-based, from COLUMNS.txt)
+# OMNI column indices (0-based, from NASA OMNI HRO 1-min format)
+# NOTE: OMNI 1-min data does NOT contain Kp. Kp is a 3-hourly index
+#       and must be merged from GFZ Potsdam data separately.
 OMNI_COLS = {
     "year": 0, "doy": 1, "hour": 2, "minute": 3,
     "bx_gsm": 6, "by_gsm": 10, "bz_gsm": 11,
     "flow_speed": 30, "proton_density": 34, "temperature": 35,
-    "kp_10": 18,   # Kp × 10 (integer)
     "bt": 12,      # Field magnitude |B|
 }
 
 OMNI_FILL = {
     "bz_gsm": 9999.99, "by_gsm": 9999.99, "bx_gsm": 9999.99,
     "bt": 9999.99, "flow_speed": 99999.9, "proton_density": 999.99,
-    "temperature": 9999999.0, "kp_10": 999,
+    "temperature": 9999999.0,
 }
+
+
+def load_gfz_kp() -> pd.DataFrame:
+    """
+    Load REAL Kp index from GFZ Potsdam file (3-hourly resolution).
+    Returns a DataFrame with columns: [timestamp_utc, kp]
+    where kp is the actual geomagnetic Kp index [0.0 - 9.0].
+    """
+    kp_file = KP_DIR / "Kp_ap_Ap_SN_F107_since_1932.txt"
+    if not kp_file.exists():
+        log.error("GFZ Kp file not found: %s", kp_file)
+        return pd.DataFrame()
+
+    log.info("  Loading REAL GFZ Potsdam Kp index from %s ...", kp_file.name)
+    rows = []
+    with open(kp_file) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 15:
+                continue
+            try:
+                y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                # 8 Kp values per day (columns 7-14), each covers 3 hours
+                for i in range(8):
+                    kp = float(parts[7 + i])
+                    ts = pd.Timestamp(year=y, month=m, day=d, hour=i * 3)
+                    rows.append({"timestamp_utc": ts, "kp": kp})
+            except (ValueError, IndexError):
+                continue
+
+    df_kp = pd.DataFrame(rows)
+    log.info("  Loaded %d Kp records (%.0f years). Range: [%.1f, %.1f]",
+             len(df_kp), len(df_kp) / (8 * 365.25),
+             df_kp["kp"].min(), df_kp["kp"].max())
+    return df_kp
 
 
 def load_omni_year(year: int) -> pd.DataFrame:
@@ -75,8 +113,6 @@ def load_omni_year(year: int) -> pd.DataFrame:
                 col = col.where(col < fill * 0.99, np.nan)
             out[name] = col.values
 
-        out["kp"] = out["kp_10"] / 10.0
-        out = out.drop(columns=["kp_10"])
         out = out.dropna(subset=["bz_gsm", "flow_speed"])
         return out
     except Exception as exc:
@@ -173,7 +209,28 @@ def main() -> None:
 
     df_all = pd.concat(frames, ignore_index=True)
     df_all = df_all.sort_values("timestamp_utc").reset_index(drop=True)
-    log.info("Total rows after loading: %d", len(df_all))
+    log.info("Total OMNI rows after loading: %d", len(df_all))
+
+    # ── Merge REAL Kp from GFZ Potsdam ──────────────────────────────────────
+    df_kp = load_gfz_kp()
+    if df_kp.empty:
+        log.error("Cannot build dataset without real Kp data!")
+        sys.exit(1)
+
+    # merge_asof: for each OMNI minute-row, find the nearest preceding Kp value
+    df_all = df_all.sort_values("timestamp_utc").reset_index(drop=True)
+    df_kp = df_kp.sort_values("timestamp_utc").reset_index(drop=True)
+    df_all = pd.merge_asof(
+        df_all, df_kp,
+        on="timestamp_utc",
+        direction="backward",
+        tolerance=pd.Timedelta("3h"),
+    )
+    kp_valid = df_all["kp"].notna().sum()
+    kp_storm = (df_all["kp"] >= 5.0).sum()
+    log.info("  Merged Kp: %d/%d rows have valid Kp, %d are storm (Kp>=5)",
+             kp_valid, len(df_all), kp_storm)
+    df_all["kp"] = df_all["kp"].fillna(0.0)
 
     # Build features
     df_feat = build_features(df_all)

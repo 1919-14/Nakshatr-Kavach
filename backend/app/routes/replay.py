@@ -76,8 +76,10 @@ def load() -> Tuple[Response, int]:
     storm_id = str(payload.get("storm_id", "")).strip()
     if not storm_id:
         return _json_error("storm_id is required", 400)
-    if REPLAY_CONTROLLER.get_status().get("state") == ReplayState.PLAYING.value:
-        return _json_error("Cannot load while replay is playing", 409)
+    if REPLAY_CONTROLLER.get_status().get("state") in (ReplayState.PLAYING.value, ReplayState.PAUSED.value):
+        # Auto-stop the previous replay so we can load a new storm seamlessly
+        REPLAY_CONTROLLER.stop()
+        logger.info("Auto-stopped previous replay to load storm: %s", storm_id)
     result = REPLAY_CONTROLLER.load_storm(storm_id)
     status_code = 200 if result.get("success") else 404
     return jsonify(result), status_code

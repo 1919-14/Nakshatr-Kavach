@@ -129,10 +129,28 @@ def get_shap() -> Tuple[Response, int]:
     """
     Return full SHAP output for specified horizon.
     Query params: horizon (default "6hr", options: "3hr","6hr","12hr","24hr")
+    During replay, returns SHAP computed from the historical replay frame.
     """
     horizon = request.args.get("horizon", "6hr")
     if horizon not in ("3hr", "6hr", "12hr", "24hr"):
         return jsonify({"error": f"Invalid horizon: {horizon}. Use 3hr/6hr/12hr/24hr."}), 400
+
+    # During replay, use SHAP from the cached replay frame instead of live features
+    try:
+        from app.services.replay_engine import PipelineInjector, REPLAY_CONTROLLER
+        if PipelineInjector.REPLAY_MODE_ACTIVE:
+            status = REPLAY_CONTROLLER.get_status()
+            current_frame = status.get("current_frame", 0)
+            cached = REPLAY_CONTROLLER.get_cached_frame(current_frame)
+            if cached:
+                # Try to get SHAP from the replay frame's kp_forecast
+                replay_forecast = cached.get("kp_forecast", {})
+                replay_shap = replay_forecast.get("shap")
+                if replay_shap:
+                    return jsonify(replay_shap), 200
+                # Fall through to compute SHAP from replay features if available
+    except Exception:
+        pass
 
     from app.services.kp_predictor import model_loader, get_latest_kp_forecast
     from app.services.feature_engineering import get_latest_features

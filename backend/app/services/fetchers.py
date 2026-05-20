@@ -5,6 +5,7 @@ Handles all outbound HTTP requests to NOAA SWPC, NASA DONKI, GOES.
 Never raises exceptions — returns None on any failure.
 """
 
+import json
 import logging
 import time
 from datetime import datetime, timedelta
@@ -75,7 +76,24 @@ def retry_request(
                 )
                 continue
 
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError as exc:
+                # NOAA SWPC endpoints occasionally return a valid JSON payload
+                # followed by unexpected trailing bytes (or concatenated JSON).
+                # Try to salvage the first JSON value to avoid spurious failures.
+                text = (response.text or "").lstrip("\ufeff").strip()
+                try:
+                    data, idx = json.JSONDecoder().raw_decode(text)
+                    if text[idx:].strip():
+                        logger.warning(
+                            "JSON_TRAILING_DATA | source=%s | ignored=%d bytes",
+                            source_name,
+                            len(text[idx:].strip()),
+                        )
+                except Exception:
+                    raise exc
+
             log_ingestion_attempt(
                 source_name=source_name,
                 success=True,

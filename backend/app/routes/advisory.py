@@ -54,7 +54,28 @@ def _json_error(message: str, status_code: int, advisory: dict | None = None) ->
 
 
 def _upstream_inputs() -> Tuple[dict, dict, dict, dict]:
-    """Read current Layer 1, 3, 4, and 5 outputs without mutating upstream state."""
+    """Read current Layer 1, 3, 4, and 5 outputs without mutating upstream state.
+    
+    When replay mode is active, reads from the latest cached replay frame
+    instead of real-time sources so SHAP/chatbot/advisory stay consistent.
+    """
+    # Check if replay is active and use replay data if available
+    try:
+        from app.services.replay_engine import PipelineInjector, REPLAY_CONTROLLER
+        if PipelineInjector.REPLAY_MODE_ACTIVE:
+            status = REPLAY_CONTROLLER.get_status()
+            current_frame = status.get("current_frame", 0)
+            cached = REPLAY_CONTROLLER.get_cached_frame(current_frame)
+            if cached:
+                return (
+                    cached.get("kp_forecast", {}),
+                    cached.get("satellite_risks", {}),
+                    cached.get("grid_risks", {}),
+                    cached.get("solar", {}),
+                )
+    except Exception:
+        pass  # Fall through to live data
+
     try:
         from app.services.ingestion_service import get_snapshot
         solar_data = get_snapshot()
