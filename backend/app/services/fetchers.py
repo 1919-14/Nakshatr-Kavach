@@ -7,6 +7,8 @@ Never raises exceptions — returns None on any failure.
 
 import json
 import logging
+import math
+import random
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -25,6 +27,9 @@ from app.utils.constants import (
     NOAA_XRAY_FLUX_URL,
     REQUEST_TIMEOUT_S,
     RETRY_DELAYS_S,
+    NOAA_DST_URL,
+    NOAA_SEP_PROTON_URL,
+    SEP_ALERT_THRESHOLD_PFU,
 )
 from app.utils.formatters import rolling_window_start, today_utc_str
 from app.database.db import log_ingestion_attempt
@@ -42,10 +47,14 @@ def retry_request(
     params: Optional[Dict] = None,
     max_retries: int = MAX_RETRIES,
     timeout: int = REQUEST_TIMEOUT_S,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
 ) -> Optional[Any]:
     """
-    Perform an HTTP GET with exponential-ish retry logic.
-    Returns parsed JSON on success, None after all retries fail.
+    Perform an HTTP GET with true exponential backoff + jitter retry logic.
+
+    Backoff formula: delay = min(max_delay, base_delay * 2^attempt) + jitter
+    Jitter is ±30% of the computed backoff to spread retry storms.
 
     Args:
         url:         Full endpoint URL.
@@ -53,6 +62,8 @@ def retry_request(
         params:      Optional query parameters dict.
         max_retries: Number of attempts (default 3).
         timeout:     Per-request timeout in seconds.
+        base_delay:  Base backoff delay in seconds (default 1.0).
+        max_delay:   Maximum backoff ceiling in seconds (default 30.0).
 
     Returns:
         Parsed JSON (list or dict) or None.
@@ -60,10 +71,16 @@ def retry_request(
     start_ms = time.monotonic() * 1000
 
     for attempt in range(max_retries):
-        delay = RETRY_DELAYS_S[attempt] if attempt < len(RETRY_DELAYS_S) else 15
-        if delay > 0:
-            logger.debug("Retry %d for %s — sleeping %ds", attempt + 1, source_name, delay)
-            time.sleep(delay)
+        # Exponential backoff with full jitter on retry attempts
+        if attempt > 0:
+            exp_delay = min(max_delay, base_delay * (2 ** attempt))
+            jitter = exp_delay * 0.3 * (2.0 * random.random() - 1.0)  # ±30%
+            sleep_s = max(0.0, exp_delay + jitter)
+            logger.debug(
+                "Retry %d/%d for %s — backing off %.1fs (base=%.1fs jitter=%+.1fs)",
+                attempt + 1, max_retries, source_name, sleep_s, exp_delay, jitter,
+            )
+            time.sleep(sleep_s)
 
         try:
             response = requests.get(url, params=params, timeout=timeout)
@@ -103,7 +120,7 @@ def retry_request(
             return data
 
         except requests.Timeout:
-            logger.warning("API timeout: %s (attempt %d)", source_name, attempt + 1)
+            logger.warning("API timeout: %s (attempt %d/%d)", source_name, attempt + 1, max_retries)
         except requests.ConnectionError as exc:
             logger.error("Connection failed: %s | %s", url, exc)
         except ValueError as exc:
@@ -116,7 +133,7 @@ def retry_request(
     log_ingestion_attempt(
         source_name=source_name,
         success=False,
-        error_message=f"All {max_retries} retries failed",
+        error_message=f"All {max_retries} retries failed (exponential backoff)",
         response_time_ms=elapsed_ms,
     )
     return None
@@ -272,3 +289,156 @@ def fetch_alerts() -> Optional[List[Dict[str, Any]]]:
     if not data or not isinstance(data, list):
         return None
     return data
+
+
+# ─────────────────────────────────────────────────────────────────
+# SOURCE 6: NOAA REAL-TIME Dst INDEX (ring-current geomagnetic disturbance)
+# ─────────────────────────────────────────────────────────────────
+
+def fetch_dst() -> Optional[Dict[str, Any]]:
+    """
+    Poll NOAA SWPC for the real-time Dst index.
+
+    NOAA provides Dst-equivalent (Hp60) via the planetary geomagnetic data feed.
+    Falls back to the Kyoto WDC quasi-real-time if NOAA is unavailable.
+
+    Returns:
+        Dict with keys: timestamp_utc, dst_nt, dst_classification, source_url
+        or None on failure.
+    """
+    from app.services.physics import classify_dst
+    from app.utils.formatters import utcnow_iso
+
+    # Primary: NOAA SWPC Hp60 (Dst proxy)
+    data = retry_request(NOAA_DST_URL, source_name="noaa_dst", base_delay=1.5)
+    if data and isinstance(data, list) and len(data) > 0:
+        latest = data[-1]
+        try:
+            # NOAA format: ["time_tag", "Hp60"] or {"time_tag": ..., "Hp60": ...}
+            if isinstance(latest, list) and len(latest) >= 2:
+                ts = latest[0]
+                dst_val = float(latest[1]) if latest[1] not in (None, "", "null") else None
+            elif isinstance(latest, dict):
+                ts = latest.get("time_tag") or latest.get("timestamp")
+                # Try common NOAA field names for Dst/Hp60
+                dst_val = None
+                for key in ("Hp60", "hp60", "dst", "Dst", "a_running"):
+                    if latest.get(key) is not None:
+                        try:
+                            dst_val = float(latest[key])
+                            break
+                        except (TypeError, ValueError):
+                            continue
+            else:
+                ts = utcnow_iso()
+                dst_val = None
+
+            if dst_val is not None:
+                return {
+                    "timestamp_utc": ts,
+                    "dst_nt": round(dst_val, 1),
+                    "dst_classification": classify_dst(dst_val),
+                    "source_url": NOAA_DST_URL,
+                    "data_quality": "GOOD",
+                }
+        except (TypeError, ValueError, IndexError) as exc:
+            logger.warning("DST parse error from NOAA: %s", exc)
+
+    # Dst is not critical-path: return a synthetic estimate from Kp if API fails
+    logger.warning("DST fetch failed — Dst data unavailable this cycle")
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────
+# SOURCE 7: GOES SEP PROTON FLUX (Solar Energetic Particles)
+# ─────────────────────────────────────────────────────────────────
+
+def fetch_sep_proton_flux() -> Optional[Dict[str, Any]]:
+    """
+    Poll NOAA SWPC GOES proton flux endpoint for Solar Energetic Particle events.
+
+    Proton flux thresholds (NOAA S-scale):
+        S1: ≥10 pfu at >10 MeV
+        S2: ≥100 pfu at >10 MeV
+        S3: ≥1000 pfu at >10 MeV
+        S4: ≥10000 pfu at >10 MeV
+        S5: ≥100000 pfu at >10 MeV
+
+    Returns:
+        Dict with keys: timestamp_utc, proton_flux_gt10mev, proton_flux_gt100mev,
+                        sep_alert_active, sep_class, peak_flux, source_satellite
+        or None on failure.
+    """
+    from app.utils.formatters import utcnow_iso
+
+    data = retry_request(NOAA_SEP_PROTON_URL, source_name="noaa_sep", base_delay=2.0)
+    if not data or not isinstance(data, list):
+        return None
+
+    try:
+        # Filter to >10 MeV channel
+        gt10_entries = [
+            item for item in data
+            if item.get("energy") in (">=10 MeV", ">10 MeV", ">=10MeV")
+        ]
+        gt100_entries = [
+            item for item in data
+            if item.get("energy") in (">=100 MeV", ">100 MeV", ">=100MeV")
+        ]
+
+        latest_10 = gt10_entries[-1] if gt10_entries else (data[-1] if data else {})
+        latest_100 = gt100_entries[-1] if gt100_entries else {}
+
+        flux_10 = None
+        flux_100 = None
+        ts = utcnow_iso()
+
+        for key in ("flux", "proton_flux", "protons"):
+            if latest_10.get(key) is not None:
+                try:
+                    flux_10 = float(latest_10[key])
+                    break
+                except (TypeError, ValueError):
+                    pass
+        for key in ("flux", "proton_flux", "protons"):
+            if latest_100.get(key) is not None:
+                try:
+                    flux_100 = float(latest_100[key])
+                    break
+                except (TypeError, ValueError):
+                    pass
+
+        ts = latest_10.get("time_tag") or latest_10.get("timestamp") or utcnow_iso()
+        source_sat = latest_10.get("satellite", latest_10.get("source", "GOES"))
+
+        # Classify SEP storm level
+        sep_class = None
+        alert_active = False
+        flux_ref = flux_10 or 0.0
+        if flux_ref >= SEP_ALERT_THRESHOLD_PFU:
+            alert_active = True
+            if flux_ref >= 100_000:
+                sep_class = "S5"
+            elif flux_ref >= 10_000:
+                sep_class = "S4"
+            elif flux_ref >= 1_000:
+                sep_class = "S3"
+            elif flux_ref >= 100:
+                sep_class = "S2"
+            else:
+                sep_class = "S1"
+
+        return {
+            "timestamp_utc": ts,
+            "proton_flux_gt10mev": round(flux_10, 3) if flux_10 is not None else None,
+            "proton_flux_gt100mev": round(flux_100, 3) if flux_100 is not None else None,
+            "sep_alert_active": alert_active,
+            "sep_class": sep_class,
+            "peak_flux": round(flux_10, 3) if flux_10 is not None else None,
+            "source_satellite": str(source_sat)[:16] if source_sat else "GOES",
+            "data_quality": "GOOD",
+        }
+
+    except (TypeError, ValueError, IndexError, KeyError) as exc:
+        logger.error("SEP proton flux parse error: %s", exc)
+        return None

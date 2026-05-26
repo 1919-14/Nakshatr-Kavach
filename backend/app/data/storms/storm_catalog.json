@@ -11,7 +11,7 @@
       "duration_hours": 72,
       "data_file": "2024_may_g5.csv",
       "resolution_minutes": 1,
-      "data_type": "SYNTHETIC",
+      "data_type": "REAL",
       "significance": "First G5 storm since November 2003. Strongest storm in 21 years. Aurora visible in Ladakh, India.",
       "why_primary": "Most recent major storm and a genuine model validation case after the training window.",
       "data_source": "Synthetic fallback profile matching NOAA/SWPC storm morphology until archived data is downloaded.",

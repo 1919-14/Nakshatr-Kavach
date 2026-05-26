@@ -66,7 +66,11 @@ def test_storm_catalog_loads_with_data_type() -> None:
     storm_ids = {storm["storm_id"] for storm in catalog["storms"]}
 
     assert storm_ids == {"2024_may_g5", "1989_quebec", "2003_halloween", "2022_starlink"}
-    assert all(storm.get("data_type") == "SYNTHETIC" for storm in catalog["storms"])
+    for storm in catalog["storms"]:
+        if storm["storm_id"] == "2024_may_g5":
+            assert storm.get("data_type") == "REAL"
+        else:
+            assert storm.get("data_type") == "SYNTHETIC"
 
 
 def test_ingestion_snapshot_backup_restore_uses_deepcopy() -> None:

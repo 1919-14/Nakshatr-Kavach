@@ -30,6 +30,19 @@ ACE_BACKUP_URL = (
     "https://services.swpc.noaa.gov/json/ace/ace_mag_1m.json"
 )
 
+# NOAA SWPC Hp60 — near-real-time Dst-equivalent (planetary geomagnetic index)
+NOAA_DST_URL = (
+    "https://services.swpc.noaa.gov/json/geospace/geospace_Hp60_kyoto_dst_1h.json"
+)
+
+# NOAA SWPC GOES proton flux — Solar Energetic Particles (SEP)
+NOAA_SEP_PROTON_URL = (
+    "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-7-day.json"
+)
+
+# SEP proton flux alert threshold: NOAA S1 scale = 10 pfu at >10 MeV
+SEP_ALERT_THRESHOLD_PFU: float = 10.0
+
 # ─────────────────────────────────────────────────────────────────
 # PHYSICAL CONSTANTS — L1 TRANSIT
 # ─────────────────────────────────────────────────────────────────
@@ -533,6 +546,7 @@ RETENTION_GRID_EVENTS_DAYS: int = 90
 # =============================================================================
 
 GROQ_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_FALLBACK_MODEL: str = "llama-3.3-70b-specdec"   # Stage-2 fallback when primary fails
 GROQ_MAX_TOKENS: int = 1500
 GROQ_TEMPERATURE: float = 0.2
 GROQ_TIMEOUT_SECONDS: int = 30

@@ -204,6 +204,9 @@ export function useSocket() {
     setKpChartData,
     setGridCorridors,
     setShapExplain,
+    setDst,
+    setSep,
+    setScintillation,
     setReplayMode,
     setReplayStatus,
     setReplayFrame,
@@ -289,6 +292,10 @@ export function useSocket() {
         // Satellites and grid are always updated (they re-score from current kp anyway)
         if (payload.satellites && !inReplay) setSatellites(normalizeSatelliteRisks(payload.satellites));
         if (payload.grid && !inReplay) setGridCorridors(normalizeGridRisks(payload.grid));
+        // Enhancement: Dst / SEP / Scintillation sections from full snapshot
+        if (payload.dst && !inReplay) setDst(payload.dst);
+        if (payload.sep && !inReplay) setSep(payload.sep);
+        if (payload.scintillation && !inReplay) setScintillation(payload.scintillation);
       });
       s.on("replay_frame", hydrateReplayFrame);
       s.on("replay_frame_ready", (payload) => {

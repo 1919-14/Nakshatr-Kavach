@@ -14,11 +14,14 @@ from typing import Any, Dict, List, Optional
 
 from app.database.db import (
     insert_cme_event,
+    insert_dst_reading,
     insert_noaa_alert,
+    insert_scintillation_reading,
+    insert_sep_reading,
     insert_solar_wind_reading,
     timestamp_exists_in_sw,
 )
-from app.services.fetchers import fetch_alerts, fetch_cme, fetch_kp, fetch_solar_wind, fetch_xray
+from app.services.fetchers import fetch_alerts, fetch_cme, fetch_dst, fetch_kp, fetch_solar_wind, fetch_sep_proton_flux, fetch_xray
 from app.services.validators import (
     classify_xray,
     compute_dynamic_pressure,
@@ -120,6 +123,27 @@ LATEST_SNAPSHOT: Dict[str, Any] = {
         "dynamic_pressure_npa": None,
         "storm_imminent": False,
         "recommended_action_level": ACTION_MONITOR,
+    },
+    "dst": {
+        "dst_nt": None,
+        "dst_classification": "QUIET",
+        "dst_timestamp_utc": None,
+    },
+    "sep": {
+        "proton_flux_gt10mev": None,
+        "proton_flux_gt100mev": None,
+        "sep_alert_active": False,
+        "sep_class": None,
+        "sep_timestamp_utc": None,
+    },
+    "scintillation": {
+        "s4_index": None,
+        "scintillation_class": "NONE",
+        "positioning_error_m": None,
+        "navic_status": "NOMINAL",
+        "diurnal_phase": None,
+        "eia_active": False,
+        "clock_error_ns": None,
     },
 }
 
@@ -612,3 +636,103 @@ def run_cme_poll() -> None:
             logger.warning("CME fetch returned None — keeping cached CME data")
     except Exception as exc:
         logger.error("Unhandled error in CME poll: %s", exc, exc_info=True)
+
+
+def run_dst_and_sep_poll() -> None:
+    """
+    Job 4 (Enhancement): Fetch Dst index + SEP proton flux and update snapshot.
+    Also recomputes NavIC ionospheric scintillation from latest physics models.
+    Called every 5 minutes by APScheduler.
+    Never raises — all errors are caught and logged.
+    """
+    from app.services.physics import compute_navic_scintillation
+    from app.utils.formatters import utcnow_iso
+    from datetime import datetime, timezone
+
+    # ── Dst index ──
+    try:
+        dst_record = fetch_dst()
+        if dst_record:
+            with _snapshot_lock:
+                LATEST_SNAPSHOT["dst"].update({
+                    "dst_nt":             dst_record.get("dst_nt"),
+                    "dst_classification": dst_record.get("dst_classification", "QUIET"),
+                    "dst_timestamp_utc":  dst_record.get("timestamp_utc"),
+                })
+            insert_dst_reading({
+                **dst_record,
+                "ingested_at": utcnow_iso(),
+            })
+            logger.debug("DST_UPDATE | dst=%s | class=%s",
+                         dst_record.get("dst_nt"), dst_record.get("dst_classification"))
+        else:
+            logger.debug("DST fetch returned None — keeping cached Dst data")
+    except Exception as exc:
+        logger.error("Unhandled error in DST poll: %s", exc, exc_info=True)
+
+    # ── SEP proton flux ──
+    try:
+        sep_record = fetch_sep_proton_flux()
+        if sep_record:
+            with _snapshot_lock:
+                LATEST_SNAPSHOT["sep"].update({
+                    "proton_flux_gt10mev":  sep_record.get("proton_flux_gt10mev"),
+                    "proton_flux_gt100mev": sep_record.get("proton_flux_gt100mev"),
+                    "sep_alert_active":     sep_record.get("sep_alert_active", False),
+                    "sep_class":            sep_record.get("sep_class"),
+                    "sep_timestamp_utc":    sep_record.get("timestamp_utc"),
+                })
+            insert_sep_reading({
+                **sep_record,
+                "ingested_at": utcnow_iso(),
+            })
+            if sep_record.get("sep_alert_active"):
+                logger.warning("SEP_ALERT | class=%s | flux_gt10=%s pfu",
+                               sep_record.get("sep_class"),
+                               sep_record.get("proton_flux_gt10mev"))
+        else:
+            logger.debug("SEP fetch returned None — keeping cached SEP data")
+    except Exception as exc:
+        logger.error("Unhandled error in SEP poll: %s", exc, exc_info=True)
+
+    # ── NavIC scintillation (recomputed every poll cycle) ──
+    try:
+        with _snapshot_lock:
+            kp = LATEST_SNAPSHOT["kp"].get("kp_current") or 0.0
+            xray_sev = LATEST_SNAPSHOT["xray"].get("xray_severity_numeric") or 1
+
+        scint = compute_navic_scintillation(
+            kp_peak=float(kp),
+            current_time_utc=datetime.now(timezone.utc),
+            xray_severity=int(xray_sev),
+            magnetic_lat_deg=15.0,  # India's mean magnetic latitude
+        )
+
+        with _snapshot_lock:
+            LATEST_SNAPSHOT["scintillation"].update({
+                "s4_index":          scint["s4_index"],
+                "scintillation_class": scint["scintillation_class"],
+                "positioning_error_m": scint["positioning_error_m"],
+                "navic_status":       scint["navic_status"],
+                "diurnal_phase":      scint["diurnal_phase"],
+                "eia_active":         scint["eia_active"],
+                "clock_error_ns":     scint["clock_error_ns"],
+            })
+
+        insert_scintillation_reading({
+            "timestamp_utc":     utcnow_iso(),
+            "kp_used":           float(kp),
+            "xray_severity":     int(xray_sev),
+            "s4_index":          scint["s4_index"],
+            "scintillation_class": scint["scintillation_class"],
+            "positioning_error_m": scint["positioning_error_m"],
+            "navic_status":       scint["navic_status"],
+            "diurnal_phase":      scint["diurnal_phase"],
+            "magnetic_lat_deg":   15.0,
+        })
+
+        logger.debug("SCINTILLATION_UPDATE | S4=%.3f | class=%s | error_m=%.1f | phase=%s",
+                     scint["s4_index"], scint["scintillation_class"],
+                     scint["positioning_error_m"], scint["diurnal_phase"])
+    except Exception as exc:
+        logger.error("Unhandled error in scintillation computation: %s", exc, exc_info=True)

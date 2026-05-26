@@ -247,6 +247,18 @@ def _job_cme() -> None:
     run_cme_poll()
 
 
+def _job_dst_and_sep() -> None:
+    """
+    Job 6: Poll NOAA Dst and GOES SEP proton flux every 5 minutes.
+    Updates dst, sep, and scintillation sections of snapshot and persists to DB.
+    """
+    if _replay_mode_active():
+        logger.debug("Scheduler: Replay mode active - skipping live Dst/SEP cycle")
+        return
+    from app.services.ingestion_service import run_dst_and_sep_poll
+    run_dst_and_sep_poll()
+
+
 def _job_cleanup() -> None:
     """
     Job 4: Delete records beyond retention policy once per day.
@@ -356,6 +368,16 @@ def init_scheduler(app: Any) -> None:
         replace_existing=True,
     )
 
+    # Job 6 — Dst + SEP every 5 minutes
+    scheduler.add_job(
+        func=_job_dst_and_sep,
+        trigger="interval",
+        seconds=300,
+        id="dst_and_sep",
+        name="NOAA Dst + GOES SEP Proton Poll",
+        replace_existing=True,
+    )
+
     scheduler.start()
     app.config["SCHEDULER_STARTED"] = True
 
@@ -363,6 +385,7 @@ def init_scheduler(app: Any) -> None:
     _job_solar_wind_and_kp()
     _job_xray_and_alerts()
     _job_cme()
+    _job_dst_and_sep()
 
     logger.info("APScheduler started — %d jobs registered", len(scheduler.get_jobs()))
 

@@ -323,3 +323,68 @@ CREATE TABLE IF NOT EXISTS validation_results (
 
 CREATE INDEX idx_validation_storm
     ON validation_results(storm_id, computed_at_utc DESC);
+
+
+-- =============================================================================
+-- ENHANCEMENT: Dst Index History (Ring-current geomagnetic disturbance index)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS dst_history (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp_utc       VARCHAR(32) NOT NULL,
+    ingested_at         VARCHAR(32) NOT NULL,
+    dst_nt              DOUBLE,                       -- Dst index in nT (negative = disturbed)
+    dst_classification  VARCHAR(16) DEFAULT 'QUIET',  -- QUIET/MINOR/MODERATE/INTENSE/EXTREME
+    source_url          VARCHAR(255),
+    data_quality        VARCHAR(16) DEFAULT 'UNKNOWN',
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_dst_timestamp (timestamp_utc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_dst_time ON dst_history(timestamp_utc DESC);
+CREATE INDEX idx_dst_class ON dst_history(dst_classification);
+
+
+-- =============================================================================
+-- ENHANCEMENT: Solar Energetic Particle (SEP) Proton Flux History
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS sep_history (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp_utc           VARCHAR(32) NOT NULL,
+    ingested_at             VARCHAR(32) NOT NULL,
+    proton_flux_gt10mev     DOUBLE,         -- pfu: >10 MeV proton flux
+    proton_flux_gt100mev    DOUBLE,         -- pfu: >100 MeV proton flux
+    sep_alert_active        TINYINT(1) DEFAULT 0,
+    sep_class               VARCHAR(16),    -- S1/S2/S3/S4/S5 NOAA scale
+    peak_flux               DOUBLE,
+    data_quality            VARCHAR(16) DEFAULT 'UNKNOWN',
+    source_satellite        VARCHAR(16),    -- GOES-16/GOES-18
+    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_sep_timestamp (timestamp_utc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_sep_time ON sep_history(timestamp_utc DESC);
+CREATE INDEX idx_sep_alert ON sep_history(sep_alert_active, timestamp_utc DESC);
+
+
+-- =============================================================================
+-- ENHANCEMENT: NavIC Ionospheric Scintillation History
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS scintillation_history (
+    id                          INT AUTO_INCREMENT PRIMARY KEY,
+    timestamp_utc               VARCHAR(32) NOT NULL,
+    kp_used                     DOUBLE,
+    xray_severity               INT,
+    s4_index                    DOUBLE,     -- S4 amplitude scintillation index (0-1+)
+    scintillation_class         VARCHAR(16),-- NONE/WEAK/MODERATE/STRONG/EXTREME
+    positioning_error_m         DOUBLE,     -- Additional NavIC positioning error in meters
+    navic_status                VARCHAR(16),-- NOMINAL/DEGRADED/IMPAIRED
+    diurnal_phase               VARCHAR(8), -- DAY/TWILIGHT/NIGHT
+    magnetic_lat_deg            DOUBLE,
+    created_at                  DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_scint_time ON scintillation_history(timestamp_utc DESC);
+CREATE INDEX idx_scint_class ON scintillation_history(scintillation_class);

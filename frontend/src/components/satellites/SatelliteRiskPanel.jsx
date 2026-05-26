@@ -10,6 +10,95 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
+// ── Scintillation Sub-Panel (shown inside NavIC expanded detail) ─────────────
+const ScintillationPanel = memo(({ scintillation }) => {
+  if (!scintillation || scintillation.s4_index === null) return null;
+
+  const s4    = Number(scintillation.s4_index ?? 0).toFixed(3);
+  const errM  = Number(scintillation.positioning_error_m ?? 0).toFixed(1);
+  const ns    = scintillation.navic_status ?? "NOMINAL";
+  const cls   = scintillation.scintillation_class ?? "NONE";
+  const phase = scintillation.diurnal_phase ?? "DAY";
+  const eia   = Boolean(scintillation.eia_active);
+  const clkNs = Number(scintillation.clock_error_ns ?? 0).toFixed(2);
+
+  const nsColor = ns === "IMPAIRED" ? "#E53935" : ns === "DEGRADED" ? "#FF9800" : "#4CAF50";
+  const s4Color = cls === "EXTREME" || cls === "STRONG" ? "#E53935"
+               : cls === "MODERATE" ? "#FF9800"
+               : cls === "WEAK" ? "#FDD835"
+               : "#4CAF50";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        marginTop: 10,
+        padding: "10px 12px",
+        background: "rgba(0,0,0,0.25)",
+        borderRadius: 8,
+        border: `1px solid ${s4Color}33`,
+        boxShadow: `inset 0 0 12px ${s4Color}0d`,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 9, fontFamily: "Orbitron, sans-serif", color: "#546E7A", letterSpacing: "0.12em" }}>
+          IONOSPHERIC SCINTILLATION
+        </span>
+        <span style={{
+          fontSize: 9, fontFamily: "Orbitron, sans-serif", fontWeight: 700,
+          padding: "2px 8px", borderRadius: 999,
+          background: `${nsColor}22`, color: nsColor, border: `1px solid ${nsColor}44`,
+        }}>
+          {ns}
+        </span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+        {[
+          { label: "S4 Index", value: s4, color: s4Color },
+          { label: "+Err (m)", value: `${errM}m`, color: s4Color },
+          { label: "Clk Delay", value: `${clkNs}ns`, color: "#00D4FF" },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 8, color: "#546E7A", fontFamily: "Orbitron, sans-serif", letterSpacing: "0.1em" }}>{label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "Orbitron, sans-serif", textShadow: `0 0 8px ${color}44` }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#546E7A", marginBottom: 3 }}>
+          <span>S4 AMPLITUDE INDEX</span>
+          <span style={{ color: s4Color, fontWeight: 600 }}>{cls}</span>
+        </div>
+        <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.min(100, (Number(s4) / 1.2) * 100)}%` }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            style={{ height: "100%", background: s4Color, borderRadius: 2, boxShadow: `0 0 6px ${s4Color}` }}
+          />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 7, color: "#455A64", marginTop: 2 }}>
+          <span>0.0 NOMINAL</span><span>0.3 WEAK</span><span>0.5 MOD</span><span>0.7 STRONG</span><span>1.0+</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+        <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 999, background: "rgba(0,212,255,0.08)", color: "#00D4FF", border: "1px solid rgba(0,212,255,0.2)", fontFamily: "Orbitron, sans-serif" }}>
+          {phase} PHASE
+        </span>
+        {eia && (
+          <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 999, background: "rgba(255,193,7,0.12)", color: "#FFC107", border: "1px solid rgba(255,193,7,0.25)", fontFamily: "Orbitron, sans-serif" }}>
+            EIA ZONE ACTIVE
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+
 const RecommendationExplanation = memo(({ sat, action }) => {
   const [lang, setLang] = useState("en");
   const [text, setText] = useState("");
@@ -71,12 +160,13 @@ const RecommendationExplanation = memo(({ sat, action }) => {
   );
 });
 
-const SatelliteCard = memo(({ sat, index }) => {
+const SatelliteCard = memo(({ sat, index, scintillation }) => {
   const [expanded, setExpanded] = useState(false);
   const cardRef = useRef(null);
   const score = Math.round(Number(sat.composite_risk || 0));
   const riskColor = getRiskColor(score);
   const action = sat.action?.split(".")[0] || "Routine monitoring";
+  const isNavic = sat.name?.toLowerCase().includes("navic") || sat.name?.toLowerCase().includes("irnss");
 
   const handleClick = useCallback(() => {
     setExpanded(e => !e);
@@ -210,6 +300,12 @@ const SatelliteCard = memo(({ sat, index }) => {
                   <CountdownTimer totalSeconds={sat.safe_mode_minutes * 60} label="SAFE MODE" urgent={sat.safe_mode_minutes < 10} />
                 </div>
               )}
+
+              {/* Ionospheric Scintillation panel for NavIC */}
+              {isNavic && scintillation && scintillation.s4_index !== null && (
+                <ScintillationPanel scintillation={scintillation} />
+              )}
+
               <RecommendationExplanation sat={sat} action={action} />
             </div>
           </motion.div>
@@ -220,7 +316,7 @@ const SatelliteCard = memo(({ sat, index }) => {
 });
 
 export const SatelliteRiskPanel = memo(() => {
-  const { satellites } = useStormStore();
+  const { satellites, scintillation } = useStormStore();
   const satList = satellites?.length ? satellites : [];
 
   const sorted = useMemo(() =>
@@ -248,6 +344,19 @@ export const SatelliteRiskPanel = memo(() => {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <SectionLabel>Satellite Risk</SectionLabel>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          {/* Active Scintillation Warning Badge */}
+          {scintillation && scintillation.scintillation_class && scintillation.scintillation_class !== "NONE" && (
+            <span style={{
+              fontSize: 9, padding: "2px 8px", borderRadius: 999,
+              background: "rgba(255,152,0,0.15)", color: "#FF9800",
+              border: "1px solid rgba(255,152,0,0.3)",
+              fontFamily: "Orbitron, sans-serif",
+              fontWeight: 700,
+              letterSpacing: "0.05em"
+            }}>
+              S4 {scintillation.scintillation_class}
+            </span>
+          )}
           {critical > 0 && (
             <span style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 999,
@@ -281,7 +390,7 @@ export const SatelliteRiskPanel = memo(() => {
       }}>
         <AnimatePresence>
           {sorted.map((sat, i) => (
-            <SatelliteCard key={sat.id} sat={sat} index={i} />
+            <SatelliteCard key={sat.id} sat={sat} index={i} scintillation={scintillation} />
           ))}
         </AnimatePresence>
         {!sorted.length && (

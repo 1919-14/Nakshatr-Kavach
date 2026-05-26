@@ -120,6 +120,11 @@ def init_db() -> None:
     The schema SQL is split on semicolons and executed statement-by-statement
     because MySQL does not support executescript(). Empty statements from
     trailing semicolons and comments-only blocks are skipped.
+
+    After executing the base schema, dynamic ALTER TABLE migrations are run
+    to add enhancement columns to existing tables without breaking live
+    deployments. Each migration is wrapped in try/except to tolerate
+    columns that already exist (MySQL error 1060).
     """
     if not _SCHEMA_FILE.exists():
         logger.critical("Schema file not found: %s", _SCHEMA_FILE)
@@ -151,10 +156,55 @@ def init_db() -> None:
                         else:
                             raise
 
+    # ── Dynamic migrations: add new columns to existing tables safely ──
+    _run_dynamic_migrations()
+
     logger.info(
         "MySQL database initialized successfully — %s@%s:%s/%s",
         _DB_USER, _DB_HOST, _DB_PORT, _DB_NAME,
     )
+
+
+def _run_dynamic_migrations() -> None:
+    """
+    Run ALTER TABLE migrations for enhancement columns.
+    Each statement is individually wrapped so a pre-existing column
+    (MySQL error 1060) does not abort the entire migration batch.
+    """
+    migration_stmts: List[Tuple[str, str]] = [
+        # (description, SQL)
+        (
+            "Add dst_current to solar_wind_readings",
+            "ALTER TABLE solar_wind_readings ADD COLUMN dst_current DOUBLE DEFAULT NULL",
+        ),
+        (
+            "Add dst_classification to solar_wind_readings",
+            "ALTER TABLE solar_wind_readings ADD COLUMN dst_classification VARCHAR(16) DEFAULT 'QUIET'",
+        ),
+        (
+            "Add sep_alert_active to solar_wind_readings",
+            "ALTER TABLE solar_wind_readings ADD COLUMN sep_alert_active TINYINT(1) DEFAULT 0",
+        ),
+        (
+            "Add sep_class to solar_wind_readings",
+            "ALTER TABLE solar_wind_readings ADD COLUMN sep_class VARCHAR(8) DEFAULT NULL",
+        ),
+        (
+            "Add s4_scintillation_index to solar_wind_readings",
+            "ALTER TABLE solar_wind_readings ADD COLUMN s4_scintillation_index DOUBLE DEFAULT NULL",
+        ),
+    ]
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for description, stmt in migration_stmts:
+                try:
+                    cur.execute(stmt)
+                    logger.info("Migration applied: %s", description)
+                except pymysql.Error as exc:
+                    if hasattr(exc, "args") and exc.args[0] == 1060:
+                        logger.debug("Column already exists (migration skipped): %s", description)
+                    else:
+                        logger.warning("Migration failed for '%s': %s", description, exc)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -578,3 +628,190 @@ def get_last_ingestion_status() -> Dict[str, Any]:
         logger.error("DB read error in get_last_ingestion_status: %s", exc)
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────
+# DST INDEX — INSERT + QUERY
+# ─────────────────────────────────────────────────────────────────
+
+def insert_dst_reading(record: Dict[str, Any]) -> Optional[int]:
+    """
+    Insert one Dst index reading into dst_history.
+    Silently skips duplicates (timestamp_utc is UNIQUE).
+
+    Args:
+        record: Dict with keys: timestamp_utc, ingested_at, dst_nt,
+                dst_classification, source_url, data_quality.
+
+    Returns:
+        New row ID or None.
+    """
+    sql = """
+        INSERT IGNORE INTO dst_history
+            (timestamp_utc, ingested_at, dst_nt, dst_classification, source_url, data_quality)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (
+                    record.get("timestamp_utc"),
+                    record.get("ingested_at"),
+                    record.get("dst_nt"),
+                    record.get("dst_classification", "QUIET"),
+                    record.get("source_url"),
+                    record.get("data_quality", "UNKNOWN"),
+                ))
+                return cur.lastrowid if cur.rowcount > 0 else None
+    except pymysql.Error as exc:
+        logger.error("DB write failed for dst_history: %s", exc)
+        return None
+
+
+def get_dst_history(hours: int = 24, limit: int = 1440) -> List[Dict[str, Any]]:
+    """
+    Retrieve Dst index history for the past N hours.
+
+    Args:
+        hours: Look-back window (default 24).
+        limit: Maximum rows to return.
+
+    Returns:
+        List of dicts, newest first.
+    """
+    from datetime import timedelta
+    cutoff = (datetime.utcnow() - timedelta(hours=min(hours, 168))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM dst_history WHERE timestamp_utc >= %s "
+                    "ORDER BY timestamp_utc DESC LIMIT %s",
+                    (cutoff, min(limit, 10_000)),
+                )
+                return cur.fetchall()
+    except pymysql.Error as exc:
+        logger.error("DB read error in get_dst_history: %s", exc)
+        return []
+
+
+def get_latest_dst() -> Optional[Dict[str, Any]]:
+    """Return the single most recent Dst reading, or None."""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM dst_history ORDER BY timestamp_utc DESC LIMIT 1"
+                )
+                return cur.fetchone()
+    except pymysql.Error as exc:
+        logger.error("DB read error in get_latest_dst: %s", exc)
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────
+# SEP PROTON FLUX — INSERT + QUERY
+# ─────────────────────────────────────────────────────────────────
+
+def insert_sep_reading(record: Dict[str, Any]) -> Optional[int]:
+    """
+    Insert one SEP proton flux reading into sep_history.
+
+    Args:
+        record: Dict with SEP flux fields.
+
+    Returns:
+        New row ID or None.
+    """
+    sql = """
+        INSERT IGNORE INTO sep_history
+            (timestamp_utc, ingested_at, proton_flux_gt10mev, proton_flux_gt100mev,
+             sep_alert_active, sep_class, peak_flux, data_quality, source_satellite)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (
+                    record.get("timestamp_utc"),
+                    record.get("ingested_at"),
+                    record.get("proton_flux_gt10mev"),
+                    record.get("proton_flux_gt100mev"),
+                    1 if record.get("sep_alert_active") else 0,
+                    record.get("sep_class"),
+                    record.get("peak_flux"),
+                    record.get("data_quality", "UNKNOWN"),
+                    record.get("source_satellite"),
+                ))
+                return cur.lastrowid if cur.rowcount > 0 else None
+    except pymysql.Error as exc:
+        logger.error("DB write failed for sep_history: %s", exc)
+        return None
+
+
+def get_sep_history(hours: int = 24, limit: int = 288) -> List[Dict[str, Any]]:
+    """Retrieve SEP proton flux history for the past N hours, newest first."""
+    from datetime import timedelta
+    cutoff = (datetime.utcnow() - timedelta(hours=min(hours, 168))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM sep_history WHERE timestamp_utc >= %s "
+                    "ORDER BY timestamp_utc DESC LIMIT %s",
+                    (cutoff, min(limit, 5000)),
+                )
+                return cur.fetchall()
+    except pymysql.Error as exc:
+        logger.error("DB read error in get_sep_history: %s", exc)
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────
+# SCINTILLATION — INSERT + QUERY
+# ─────────────────────────────────────────────────────────────────
+
+def insert_scintillation_reading(record: Dict[str, Any]) -> Optional[int]:
+    """Persist a NavIC ionospheric scintillation calculation result."""
+    sql = """
+        INSERT INTO scintillation_history
+            (timestamp_utc, kp_used, xray_severity, s4_index, scintillation_class,
+             positioning_error_m, navic_status, diurnal_phase, magnetic_lat_deg)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (
+                    record.get("timestamp_utc"),
+                    record.get("kp_used"),
+                    record.get("xray_severity"),
+                    record.get("s4_index"),
+                    record.get("scintillation_class"),
+                    record.get("positioning_error_m"),
+                    record.get("navic_status"),
+                    record.get("diurnal_phase"),
+                    record.get("magnetic_lat_deg"),
+                ))
+                return cur.lastrowid
+    except pymysql.Error as exc:
+        logger.error("DB write failed for scintillation_history: %s", exc)
+        return None
+
+
+def get_scintillation_history(hours: int = 24) -> List[Dict[str, Any]]:
+    """Retrieve scintillation history for the past N hours, newest first."""
+    from datetime import timedelta
+    cutoff = (datetime.utcnow() - timedelta(hours=min(hours, 72))).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM scintillation_history WHERE timestamp_utc >= %s "
+                    "ORDER BY timestamp_utc DESC LIMIT 1000",
+                    (cutoff,),
+                )
+                return cur.fetchall()
+    except pymysql.Error as exc:
+        logger.error("DB read error in get_scintillation_history: %s", exc)
+        return []

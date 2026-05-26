@@ -207,3 +207,98 @@ def get_alerts():
     for k, v in _quality_headers(snapshot).items():
         resp.headers[k] = v
     return resp, 200
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/solar/dst
+# ─────────────────────────────────────────────────────────────────
+
+@solar_bp.route("/dst", methods=["GET"])
+def get_dst():
+    """
+    Return real-time Dst ring-current index from snapshot and DB history.
+
+    Query params:
+        hours: int, default 24, max 168 — history look-back window.
+
+    Returns:
+        200: Dict with current Dst snapshot and recent history.
+    """
+    try:
+        hours = int(request.args.get("hours", 24))
+        hours = max(1, min(hours, 168))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid 'hours' parameter"}), 400
+
+    from app.database.db import get_dst_history, get_latest_dst
+    snapshot = get_snapshot()
+    current_dst = snapshot.get("dst", {})
+    history = get_dst_history(hours=hours, limit=hours * 60)
+
+    payload = {
+        "current": current_dst,
+        "history": history,
+        "hours": hours,
+        "count": len(history),
+        "description": "Dst (Disturbance Storm Time) ring-current index in nanoTesla."
+                        " Negative values indicate geomagnetic disturbance.",
+        "thresholds": {
+            "QUIET": ">= -20 nT",
+            "MINOR": "-20 to -50 nT",
+            "MODERATE": "-50 to -100 nT",
+            "INTENSE": "-100 to -200 nT",
+            "EXTREME": "< -200 nT",
+        },
+    }
+    resp = jsonify(payload)
+    for k, v in _quality_headers(snapshot).items():
+        resp.headers[k] = v
+    return resp, 200
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/solar/sep
+# ─────────────────────────────────────────────────────────────────
+
+@solar_bp.route("/sep", methods=["GET"])
+def get_sep():
+    """
+    Return Solar Energetic Particle (SEP) proton flux from snapshot and DB history.
+
+    Query params:
+        hours: int, default 24, max 168 — history look-back window.
+
+    Returns:
+        200: Dict with current SEP snapshot, alert status, and recent history.
+    """
+    try:
+        hours = int(request.args.get("hours", 24))
+        hours = max(1, min(hours, 168))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid 'hours' parameter"}), 400
+
+    from app.database.db import get_sep_history
+    snapshot = get_snapshot()
+    current_sep = snapshot.get("sep", {})
+    history = get_sep_history(hours=hours)
+
+    payload = {
+        "current": current_sep,
+        "history": history,
+        "hours": hours,
+        "count": len(history),
+        "alert_active": current_sep.get("sep_alert_active", False),
+        "description": "GOES integral proton flux at >10 MeV (Solar Energetic Particles)."
+                        " S1 threshold = 10 pfu. Active SEP events increase SEU risk.",
+        "noaa_scale": {
+            "S1": ">=10 pfu (minor)",
+            "S2": ">=100 pfu (moderate)",
+            "S3": ">=1000 pfu (strong)",
+            "S4": ">=10000 pfu (severe)",
+            "S5": ">=100000 pfu (extreme)",
+        },
+    }
+    resp = jsonify(payload)
+    for k, v in _quality_headers(snapshot).items():
+        resp.headers[k] = v
+    return resp, 200

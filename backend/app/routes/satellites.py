@@ -172,22 +172,37 @@ def get_live_tles():
 
 
 @satellites_bp.route("/navic", methods=["GET"])
+@satellites_bp.route("/navig", methods=["GET"])
 def get_navic_status():
-    """NavIC constellation-specific status."""
+    """NavIC constellation-specific status including scintillation metrics."""
     from app.services.satellite_scorer import get_latest_satellite_risks
+    from app.services.ingestion_service import get_snapshot
     risks = get_latest_satellite_risks()
     if not risks:
         return jsonify({"nav_system_status": "UNKNOWN", "message": "No data"}), 503
+    
+    snapshot = get_snapshot()
+    scint = snapshot.get("scintillation", {})
+    
     navic = risks.get("tier1", {}).get("NavIC-IRNSS", {})
     return jsonify({
         "nav_system_status": navic.get("nav_system_status", "NOMINAL"),
-        "nav_error_meters": navic.get("nav_error_meters", 0),
+        "nav_error_meters": max(navic.get("nav_error_meters", 0.0), scint.get("positioning_error_m", 0.0)),
         "clock_anomaly_risk": navic.get("risk_scores", {}).get("clock_anomaly_risk", 0),
         "affected_users_million": navic.get("affected_users_million", 500),
         "risk_level": navic.get("risk_level", "MINIMAL"),
         "composite_risk": navic.get("risk_scores", {}).get("composite_final", 0),
         "kp_used": risks.get("kp_used", 0),
         "computed_at_utc": risks.get("computed_at_utc"),
+        "scintillation": {
+            "s4_index": scint.get("s4_index", 0.05),
+            "scintillation_class": scint.get("scintillation_class", "NONE"),
+            "positioning_error_m": scint.get("positioning_error_m", 3.0),
+            "navic_status": scint.get("navic_status", "NOMINAL"),
+            "diurnal_phase": scint.get("diurnal_phase", "DAY"),
+            "eia_active": scint.get("eia_active", False),
+            "clock_error_ns": scint.get("clock_error_ns", 0.0),
+        }
     })
 
 

@@ -167,11 +167,79 @@ def _try_download_real_data(storm: Dict[str, Any]) -> Optional[pd.DataFrame]:
     """
     Attempt real-data acquisition for a storm.
 
-    Stable historical endpoints differ between NOAA/SWPC and OMNIWeb products.
-    This implementation intentionally returns None unless a future verified
-    downloader can produce the complete Layer 7 schema for the storm.
+    For the May 2024 G5 storm, loads the real OMNI+GFZ-sourced parquet file
+    that was built by download_data/build_training_dataset.py — the strictly
+    held-out test set (never used in model training).
+
+    All other storms fall back to deterministic synthetic profiles until a
+    verified archival downloader is available for those events.
+
+    Returns:
+        DataFrame with columns matching the Layer 7 replay schema, or None.
     """
-    logger.info("No verified direct downloader configured for %s; using synthetic fallback", storm["storm_id"])
+    storm_id = storm["storm_id"]
+
+    # ── May 2024 G5: real OMNI/GFZ data available ──────────────────
+    if storm_id == "2024_may_g5":
+        parquet_path = REPO_ROOT / "download_data" / "raw" / "may2024_g5_test.parquet"
+        if not parquet_path.exists():
+            logger.warning(
+                "Real May 2024 G5 parquet not found at %s — using synthetic fallback", parquet_path
+            )
+            return None
+
+        logger.info("Loading REAL May 2024 G5 storm data from %s", parquet_path.name)
+        try:
+            df = pd.read_parquet(parquet_path)
+
+            # Rename columns to match Layer 7 replay schema
+            df = df.rename(columns={
+                "bt":              "bt_total",
+                "flow_speed":      "sw_speed_kmps",
+                "kp":              "kp_current",
+                "proton_density":  "proton_density_ccm",
+                "temperature":     "proton_temp_kelvin",
+            })
+
+            # Ensure datetime parsing and UTC timezone
+            df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+            df = df.sort_values("timestamp_utc").reset_index(drop=True)
+
+            # Filter to the storm's defined time window
+            start_ts = pd.Timestamp(storm["start_timestamp_utc"], tz="UTC")
+            duration_hrs = int(storm["duration_hours"])
+            end_ts = start_ts + pd.Timedelta(hours=duration_hrs)
+
+            df_storm = df[
+                (df["timestamp_utc"] >= start_ts) & (df["timestamp_utc"] < end_ts)
+            ].copy()
+
+            if df_storm.empty:
+                logger.warning(
+                    "No rows found in parquet between %s and %s — using synthetic fallback",
+                    start_ts, end_ts,
+                )
+                return None
+
+            # Forward/backward fill any gaps from OMNI fill-values
+            numeric_cols = df_storm.select_dtypes(include="number").columns.tolist()
+            df_storm[numeric_cols] = df_storm[numeric_cols].ffill().bfill()
+
+            # Convert timestamp to ISO string expected by validate_storm_dataframe
+            df_storm["timestamp_utc"] = df_storm["timestamp_utc"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            logger.info(
+                "Loaded %d REAL rows for May 2024 G5 (window: %s → %s)",
+                len(df_storm), start_ts.isoformat(), end_ts.isoformat(),
+            )
+            return df_storm
+
+        except Exception as exc:
+            logger.error("Failed to load real May 2024 G5 data: %s — using synthetic fallback", exc)
+            return None
+
+    # ── All other storms: no verified archival download available ───
+    logger.info("No verified real-data source for %s — using synthetic fallback", storm_id)
     return None
 
 

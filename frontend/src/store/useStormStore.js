@@ -16,6 +16,29 @@ export const useStormStore = create((set, get) => ({
   advisory:      USE_MOCK ? MOCK_ADVISORY        : null,
   shapExplain:   null,
 
+  // ── Enhancement: Dst / SEP / Scintillation ────────────────────────────────
+  dst: {
+    dst_nt:             null,
+    dst_classification: "QUIET",
+    dst_timestamp_utc:  null,
+  },
+  sep: {
+    proton_flux_gt10mev:  null,
+    proton_flux_gt100mev: null,
+    sep_alert_active:     false,
+    sep_class:            null,
+    sep_timestamp_utc:    null,
+  },
+  scintillation: {
+    s4_index:            null,
+    scintillation_class: "NONE",
+    positioning_error_m: null,
+    navic_status:        "NOMINAL",
+    diurnal_phase:       null,
+    eia_active:          false,
+    clock_error_ns:      null,
+  },
+
   // ── System status ─────────────────────────────────────────────────────────
   systemStatus: {
     noaa:   "online",   // "online" | "degraded" | "offline"
@@ -57,6 +80,9 @@ export const useStormStore = create((set, get) => ({
   setGridCorridors: (d)  => set({ gridCorridors: d }),
   setAdvisory:      (d)  => set({ advisory: d }),
   setShapExplain:   (d)  => set({ shapExplain: d }),
+  setDst:           (d)  => set(state => ({ dst: { ...state.dst, ...(d || {}) } })),
+  setSep:           (d)  => set(state => ({ sep: { ...state.sep, ...(d || {}) } })),
+  setScintillation: (d)  => set(state => ({ scintillation: { ...state.scintillation, ...(d || {}) } })),
   setSystemStatus:  (d)  => set(state => {
     const next = typeof d === "function" ? d(state.systemStatus) : d;
     return { systemStatus: { ...state.systemStatus, ...next } };

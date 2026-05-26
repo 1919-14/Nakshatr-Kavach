@@ -519,7 +519,56 @@ class GroqAdvisoryClient:
         advisory_urgency: str,
         context: dict,
     ) -> dict:
-        """Call Groq once for this trigger event and return validated JSON."""
+        """
+        Call Groq for this trigger event using a dual-stage fallback strategy.
+
+        Stage-1: Primary model (GROQ_MODEL).
+        Stage-2: Fallback model (GROQ_FALLBACK_MODEL) if Stage-1 fails or fails QA.
+        """
+        from app.utils.constants import GROQ_FALLBACK_MODEL
+
+        # ── Stage 1: Try Primary Model ──
+        try:
+            logger.info("Attempting Stage-1 primary LLM generation with %s", GROQ_MODEL)
+            return self._execute_generation_with_model(
+                model=GROQ_MODEL,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                advisory_urgency=advisory_urgency,
+                context=context
+            )
+        except Exception as exc:
+            logger.warning(
+                "Stage-1 primary LLM generation failed: %s. Initiating Stage-2 fallback with %s.",
+                exc,
+                GROQ_FALLBACK_MODEL,
+            )
+
+        # ── Stage 2: Try Fallback Model ──
+        try:
+            logger.info("Attempting Stage-2 fallback LLM generation with %s", GROQ_FALLBACK_MODEL)
+            return self._execute_generation_with_model(
+                model=GROQ_FALLBACK_MODEL,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                advisory_urgency=advisory_urgency,
+                context=context
+            )
+        except Exception as exc:
+            logger.error("Stage-2 fallback LLM generation also failed: %s", exc)
+            raise GroqAdvisoryError(
+                f"Both Stage-1 and Stage-2 LLM generations failed. Final error: {exc}"
+            )
+
+    def _execute_generation_with_model(
+        self,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        advisory_urgency: str,
+        context: dict,
+    ) -> dict:
+        """Helper method to run generation for a specific model with retries."""
         last_error: Optional[BaseException] = None
 
         for attempt in range(GROQ_MAX_RETRIES):
@@ -533,7 +582,7 @@ class GroqAdvisoryClient:
                 }.get(advisory_urgency, GROQ_TEMPERATURE)
 
                 response = self.client.chat.completions.create(
-                    model=GROQ_MODEL,
+                    model=model,
                     max_tokens=GROQ_MAX_TOKENS,
                     temperature=temperature,
                     messages=[
@@ -553,35 +602,35 @@ class GroqAdvisoryClient:
                 self.last_request_timestamp = time.time()
 
                 logger.info(
-                    "Groq API call: attempt=%d elapsed=%.0fms tokens=%d model=%s",
+                    "Groq API call success: attempt=%d elapsed=%.0fms tokens=%d model=%s",
                     attempt + 1,
                     elapsed_ms,
                     tokens_used,
-                    GROQ_MODEL,
+                    model,
                 )
 
                 advisory_dict = self._parse_and_validate(raw_content, context)
                 advisory_dict["_groq_metadata"] = {
                     "tokens_used": tokens_used,
                     "elapsed_ms": round(elapsed_ms, 0),
-                    "model": GROQ_MODEL,
+                    "model": model,
                     "temperature": temperature,
                     "attempt_number": attempt + 1,
                 }
                 return advisory_dict
 
             except GroqRateLimitError as exc:
-                logger.warning("Groq rate limit hit: %s", exc)
+                logger.warning("Groq rate limit hit for model %s: %s", model, exc)
                 last_error = exc
                 if attempt < GROQ_MAX_RETRIES - 1:
                     time.sleep(GROQ_RETRY_DELAYS[attempt] * 3)
             except GroqAPIConnectionError as exc:
-                logger.error("Groq connection error: %s", exc)
+                logger.error("Groq connection error for model %s: %s", model, exc)
                 last_error = exc
                 if attempt < GROQ_MAX_RETRIES - 1:
                     time.sleep(GROQ_RETRY_DELAYS[attempt])
             except GroqAPIStatusError as exc:
-                logger.error("Groq API status error: %s", exc)
+                logger.error("Groq API status error for model %s: %s", model, exc)
                 last_error = exc
                 status_code = getattr(exc, "status_code", None)
                 if status_code in [500, 502, 503] and attempt < GROQ_MAX_RETRIES - 1:
@@ -589,16 +638,16 @@ class GroqAdvisoryClient:
                 else:
                     break
             except (json.JSONDecodeError, ValueError) as exc:
-                logger.error("Groq JSON/QA validation error: %s", exc)
+                logger.error("Groq JSON/QA validation error for model %s: %s", model, exc)
                 last_error = exc
                 if attempt < GROQ_MAX_RETRIES - 1:
                     time.sleep(GROQ_RETRY_DELAYS[attempt])
             except Exception as exc:
-                logger.error("Unexpected Groq advisory failure: %s", exc)
+                logger.error("Unexpected Groq advisory failure for model %s: %s", model, exc)
                 last_error = exc
                 break
 
-        raise GroqAdvisoryError(f"Groq API failed after {GROQ_MAX_RETRIES} attempts: {last_error}")
+        raise GroqAdvisoryError(f"Model {model} failed after {GROQ_MAX_RETRIES} attempts: {last_error}")
 
     def _parse_and_validate(self, raw_content: str, context: Optional[dict] = None) -> dict:
         """Parse Groq JSON, enforce required fields, and run prompt QA when context exists."""

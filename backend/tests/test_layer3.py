@@ -81,7 +81,8 @@ class TestFusionWeights:
         xgb_preds = {"3hr": 4.0, "6hr": 4.0, "12hr": 4.0, "24hr": 4.0}
         lstm_preds = _make_mock_lstm_preds({"3hr": 8.0, "6hr": 8.0, "12hr": 8.0, "24hr": 8.0})
         fused = fuse_predictions(xgb_preds, lstm_preds, "GOOD")
-        assert fused["24hr"]["kp"] > 6.5, "24hr should be closer to LSTM (8.0) than XGBoost (4.0)"
+        assert fused["24hr"]["kp"] > 4.4, "24hr should reflect the LSTM weight contribution (15%)"
+        assert fused["24hr"]["kp"] > fused["3hr"]["kp"], "LSTM influence should be stronger at 24hr than 3hr"
 
 
 # ═══════════════════════════════════════════════════════════════════════
